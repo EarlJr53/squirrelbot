@@ -30,6 +30,10 @@ class GamepadControl:
         self.ARM_EE_FLAG = False
         self.ARM_HOME = False
 
+        # # Add these lines to existing init
+        # self.last_command_time = time.time()
+        # self.min_command_interval = 0.1  # 100ms between commands
+
     
     def initialize_gamepad(self):
         """Attempts to initialize the first connected gamepad."""
@@ -51,6 +55,13 @@ class GamepadControl:
         Returns:
             GamepadCmds: Updated command object reflecting current gamepad input.
         """
+
+        # current_time = time.time()
+        
+        # # Check if enough time has passed since last command
+        # if current_time - self.last_command_time < self.min_command_interval:
+        #     return self.gamepad_cmds_prev
+
         gamepad_cmds = GamepadCmds()
         events = self.gamepad._do_iter()
 
@@ -69,7 +80,7 @@ class GamepadControl:
         if self.ARM_FLAG:
             gamepad_cmds.arm_vx = self.map_value(self.abs_x, -0.1, 0.1)
             gamepad_cmds.arm_vy = self.map_value(self.abs_y, 0.1, -0.1)
-            gamepad_cmds.arm_vz = self.map_value(self.abs_rz, 0.1, -0.1)
+            gamepad_cmds.arm_vz = self.map_value(self.abs_z, 0.1, -0.1)
 
         gamepad_cmds.arm_j1 = self.map_value(self.abs_x, -0.1, 0.1) if self.ARM_J1_FLAG else 0.0
         gamepad_cmds.arm_j2 = self.map_value(self.abs_x, -0.1, 0.1) if self.ARM_J2_FLAG else 0.0
@@ -79,6 +90,8 @@ class GamepadControl:
         gamepad_cmds.arm_ee = self.map_value(self.abs_x, -0.1, 0.1) if self.ARM_EE_FLAG else 0.0
         gamepad_cmds.arm_home = int(self.ARM_HOME)
 
+        # self.last_command_time = current_time  # Update last command time
+
         self.gamepad_cmds_prev = gamepad_cmds
         return gamepad_cmds
 
@@ -87,24 +100,24 @@ class GamepadControl:
         code_map = {
             'ABS_X': ('abs_x', event.state),
             'ABS_Y': ('abs_y', event.state),
-            'ABS_Z': ('abs_z', event.state),
-            'ABS_RZ': ('abs_rz', event.state),
-            'BTN_WEST': ('MOBILE_BASE_FLAG', bool(event.state)),
-            'BTN_Z': ('ARM_FLAG', bool(event.state)),
-            'BTN_NORTH': ('ARM_J1_FLAG', bool(event.state)),
-            'BTN_C': ('ARM_J2_FLAG', bool(event.state)),
-            'BTN_EAST': ('ARM_J3_FLAG', bool(event.state)),
-            'BTN_SOUTH': ('ARM_J4_FLAG', bool(event.state)),
-            'BTN_TR': ('ARM_J5_FLAG', bool(event.state)),
+            'ABS_RY': ('abs_z', event.state),
+            # 'ABS_RZ': ('abs_rz', event.state),
+            # 'BTN_WEST': ('MOBILE_BASE_FLAG', bool(event.state)),
+            'BTN_TR': ('ARM_FLAG', bool(event.state)),
+            'BTN_WEST': ('ARM_J1_FLAG', bool(event.state)),
+            'BTN_EAST': ('ARM_J2_FLAG', bool(event.state)),
+            'BTN_SOUTH': ('ARM_J3_FLAG', bool(event.state)),
+            'BTN_NORTH': ('ARM_J4_FLAG', bool(event.state)),
+            'BTN_START': ('ARM_J5_FLAG', bool(event.state)),
             'BTN_TL': ('ARM_EE_FLAG', bool(event.state)),
-            'BTN_TL2': ('ARM_HOME', bool(event.state))
+            'BTN_SELECT': ('ARM_HOME', bool(event.state))
         }
 
         if event.code in code_map:
             setattr(self, code_map[event.code][0], code_map[event.code][1])
 
     @staticmethod
-    def map_value(x: float, out_min: float, out_max: float) -> float:
+    def map_value(x: float, out_min: float, out_max: float, deadzone: float = 0.05) -> float:
         """Maps an input value from hardware range (0-255) to a desired output range.
 
         Args:
@@ -116,5 +129,13 @@ class GamepadControl:
             float: Mapped value.
         """
         joint_min, joint_max = 0, 255
+
+        # center = (joint_max - joint_min) / 2
+        # deadzone_range = (joint_max - joint_min) * deadzone
+
+        # # Check if input is within deadzone around center
+        # if abs(x - center) < deadzone_range:
+        #     return 0.0
+            
         val = (x - joint_min) * (out_max - out_min) / (joint_max - joint_min) + out_min
         return val if abs(val) > 0.005 else 0.0

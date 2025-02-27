@@ -16,6 +16,10 @@ WHEEL_RADIUS = 0.047  # meters
 BASE_LENGTH_X = 0.096  # meters
 BASE_LENGTH_Y = 0.105  # meters
 
+K_VEC = [0, 0, 1]
+DET_J_THRESH = 3 * 10 & -5
+VEL_SCALE = 0.25
+
 class HiwonderRobot:
     def __init__(self):
         """Initialize motor controllers, servo bus, and default robot states."""
@@ -24,12 +28,30 @@ class HiwonderRobot:
 
         self.joint_values = [0, 0, 90, -30, 0, 0]  # degrees
         self.home_position = [0, 0, 90, -30, 0, 0]  # degrees
+        # self.home_position = [20, 20, 20, 20, 20, 0]  # degrees
+
         self.joint_limits = [
             [-120, 120], [-90, 90], [-120, 120],
             [-100, 100], [-90, 90], [-120, 30]
         ]
+        self.vel_limits = [
+            [-30, 30],
+            [-30, 30],
+            [-30, 30],
+            [-30, 30],
+            [-30, 30],
+        ]
         self.joint_control_delay = 0.2 # secs
         self.speed_control_delay = 0.2
+
+        # Link lengths
+        self.l1, self.l2, self.l3, self.l4, self.l5 = .155, .099, .095, .055, .105
+
+        self.dh_params = np.zeros((5,4))
+        self.T = np.array([np.eye(4) for _ in range(5)])
+        self.T_cumulative = np.array([np.eye(4) for _ in range(5)])
+        self.jacobian = np.zeros((3, 5))
+        self.inv_jacobian = np.zeros((5, 3))
 
         self.move_to_home_position()
 
@@ -55,6 +77,33 @@ class HiwonderRobot:
         ######################################################################
 
         position = [0]*3
+
+        theta = np.deg2rad(self.joint_values.copy())
+
+        # Initialize DH parameters [theta, d, a, alpha]
+        self.dh_params = [
+            [theta[0], self.l1, 0, (np.pi / 2)],
+            [(np.pi / 2) + theta[1], 0, self.l2, 0],
+            [-theta[2], 0, self.l3, 0],
+            [theta[3], 0, self.l4 + self.l5, theta[4]],
+            # [np.deg2rad(theta[3]), 0, self.l4, (np.pi / 2)],
+            [(-np.pi / 2), 0, 0, (-np.pi / 2)],
+            # [0, 0, self.l5, np.deg2rad(theta[4])],
+        ]
+
+        for index, dh_item in enumerate(self.dh_params):
+            self.T[index] = ut.dh_to_matrix(dh_item)
+
+        self.T_cumulative = [np.eye(4)]
+        for i in range(5):
+            self.T_cumulative.append(self.T_cumulative[-1] @ self.T[i])
+
+        # Extract end-effector position from final transformation matrix
+        position = [
+            self.T_cumulative[-1][0,3],
+            self.T_cumulative[-1][1,3],
+            self.T_cumulative[-1][2,3]
+        ]
         
         ######################################################################
 
@@ -91,11 +140,41 @@ class HiwonderRobot:
             cmd (GamepadCmds): Contains linear velocities for the arm.
         """
         vel = [cmd.arm_vx, cmd.arm_vy, cmd.arm_vz]
+        vel = np.array(vel)
 
         ######################################################################
         # insert your code for finding "thetalist_dot"
 
-        thetalist_dot = [0]*5
+        thetalist_dot = np.zeros((5))
+
+        for index, transform in enumerate(self.T_cumulative):
+            if index == 0:
+                self.jacobian[:, index] = np.cross(K_VEC, self.T_cumulative[-1][:3, 3])
+                continue
+            elif index == 5:
+                break
+            self.jacobian[:, index] = np.cross(
+                transform[:3, :3] @ K_VEC,
+                (self.T_cumulative[-1][:3, 3] - transform[:3, 3]),
+            )
+
+        self.inv_jacobian = np.linalg.pinv(self.jacobian)
+
+        det_J = np.linalg.det(np.dot(self.jacobian, np.transpose(self.jacobian)))
+
+        if abs(det_J) < DET_J_THRESH:
+            vel = vel * VEL_SCALE
+
+        thetalist_dot = np.rad2deg(self.inv_jacobian @ vel)
+        # thetalist_dot = self.inv_jacobian @ vel
+
+        thetalist_unbounded = thetalist_dot.copy()
+
+        for joint, limits in enumerate(self.vel_limits):
+            if thetalist_dot[joint] < limits[0]:
+                thetalist_dot[joint] = limits[0]
+            elif thetalist_dot[joint] > limits[1]:
+                thetalist_dot[joint] = limits[1]
 
         ######################################################################
 
@@ -103,10 +182,12 @@ class HiwonderRobot:
         print(f'[DEBUG] Current thetalist (deg) = {self.joint_values}') 
         print(f'[DEBUG] linear vel: {[round(vel[0], 3), round(vel[1], 3), round(vel[2], 3)]}')
         print(f'[DEBUG] thetadot (deg/s) = {[round(td,2) for td in thetalist_dot]}')
+        print(f'[DEBUG] thetadot_unbounded (deg/s) = {[round(td,2) for td in thetalist_unbounded]}')
+
 
         # Update joint angles
-        dt = 0.5 # Fixed time step
-        K = 1600 # mapping gain for individual joint control
+        dt = 0.2 # Fixed time step
+        K = .2 # mapping gain for individual joint control
         new_thetalist = [0.0]*6
 
         # linear velocity control
