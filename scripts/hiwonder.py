@@ -151,66 +151,6 @@ class HiwonderRobot:
     # Methods for interfacing with the 5-DOF robotic arm
     # -------------------------------------------------------------
 
-    def compute_Jacobian(self):
-
-        # Compute Jacobian matrix for the robot arm
-        angles_rad = np.deg2rad(self.joint_values)
-
-        sigma1 = np.cos(angles_rad[0] - angles_rad[1] + angles_rad[2] - angles_rad[3])
-        sigma2 = np.cos(angles_rad[0] + angles_rad[1] - angles_rad[2] + angles_rad[3])
-        sigma6 = np.sin(angles_rad[1] - angles_rad[2] + angles_rad[3])
-        sigma8 = np.cos(angles_rad[1] - angles_rad[2] + angles_rad[3])
-        sigma7 = self.l3 * np.cos(angles_rad[1] - angles_rad[2])
-        sigma5 = self.l3 * np.sin(angles_rad[1] - angles_rad[2])
-        sigma3 = self.l4 * sigma6 + self.l5 * sigma6 + self.l2 * np.sin(angles_rad[1]) + sigma5
-        sigma4 = self.l4 * sigma8 + self.l5 * sigma8 + self.l2 * np.cos(angles_rad[1]) + sigma7
-        
-        J_v = np.array([
-            [np.sin(angles_rad[0]) * sigma3, -np.cos(angles_rad[0]) * sigma4, 
-            (self.l4 * sigma1 / 2) + (self.l5 * sigma1 / 2) + (self.l3 * np.cos(angles_rad[0] + angles_rad[1] - angles_rad[2]) / 2) + 
-            (self.l3 * np.cos(angles_rad[0] - angles_rad[1] + angles_rad[2]) / 2) + (self.l4 * sigma2 / 2) + (self.l5 * sigma2 / 2),
-            -((self.l4 + self.l5) * (sigma1 + sigma2) / 2), 0],
-            [-np.cos(angles_rad[0]) * sigma3, -np.sin(angles_rad[0]) * sigma4, 
-            np.sin(angles_rad[0]) * (self.l4 * sigma8 + self.l5 * sigma8 + sigma7),
-            -((self.l4 + self.l5) * (np.sin(angles_rad[0] + angles_rad[1] - angles_rad[2] + angles_rad[3]) + np.sin(angles_rad[0] - angles_rad[1] + angles_rad[2] - angles_rad[3])) / 2), 0],
-            [0, -self.l4 * sigma6 - self.l5 * sigma6 - self.l2 * np.sin(angles_rad[1]) - sigma5, self.l4 * sigma6 + self.l5 * sigma6 + sigma5, -sigma6 * (self.l4 + self.l5), 0]
-        ])
-
-        return J_v
-
-    def jacobian_other(self):
-
-
-        t_cumul = self.T[0] @ self.T[1] @ self.T[2] @ self.T[3] @ self.T[4]
-
-        J = np.empty((3, 5))
-
-        t1 = t_cumul[0:3, 3]
-        r1 = np.array([0, 0, 1])
-        j1 = np.cross(r1, t1)
-        J[0:3, 0] = j1
-
-        t2 = t_cumul[0:3, 3] - self.T[0][0:3, 3]
-        r2 = self.T[0][0:3, 2]
-        j2 = np.cross(r2, t2)
-        J[0:3, 1] = j2
-
-        t3 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1])[0:3, 3]
-        r3 = (self.T[0] @ self.T[1])[0:3, 2]
-        j3 = np.cross(r3, t3)
-        J[0:3, 2] = j3
-
-        t4 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1] @ self.T[2])[0:3, 3]
-        r4 = (self.T[0] @ self.T[1] @ self.T[2])[0:3, 2]
-        j4 = np.cross(r4, t4)
-        J[0:3, 3] = j4
-
-        t5 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1] @ self.T[2] @ self.T[3])[0:3, 3]
-        r5 = (self.T[0] @ self.T[1] @ self.T[2] @ self.T[3])[0:3, 2]
-        j5 = np.cross(r5, t5)
-        J[0:3, 4] = j5
-
-        return J
 
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
@@ -251,10 +191,9 @@ class HiwonderRobot:
                     transform[:3, :3] @ K_VEC,
                     (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
                 )
-        # self.jacobian = self.jacobian_other()
-        # self.jacobian = self.compute_Jacobian()
 
-        # print(self.jacobian)
+        # Invert speed for flipped motor
+        self.jacobian[:,2] = -self.jacobian[:,2]
 
         self.inv_jacobian = np.linalg.pinv(self.jacobian)
 
