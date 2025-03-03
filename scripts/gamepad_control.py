@@ -117,7 +117,7 @@ class GamepadControl:
             setattr(self, code_map[event.code][0], code_map[event.code][1])
 
     @staticmethod
-    def map_value(x: float, out_min: float, out_max: float, deadzone: float = 0.05) -> float:
+    def map_value(x: float, out_min: float, out_max: float, deadzone: float = 0.202) -> float:
         """Maps an input value from hardware range (0-255) to a desired output range.
 
         Args:
@@ -133,9 +133,9 @@ class GamepadControl:
         # center = (joint_max - joint_min) / 2
         # deadzone_range = (joint_max - joint_min) * deadzone
 
-        # # Check if input is within deadzone around center
+        # Check if input is within deadzone around center
         # if abs(x - center) < deadzone_range:
         #     return 0.0
             
         val = (x - joint_min) * (out_max - out_min) / (joint_max - joint_min) + out_min
-        return val if abs(val) > 0.005 else 0.0
+        return val if abs(val) > deadzone else 0.0

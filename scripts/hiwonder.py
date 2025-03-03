@@ -45,11 +45,15 @@ class HiwonderRobot:
         self.speed_control_delay = 0.2
 
         # Link lengths
-        self.l1, self.l2, self.l3, self.l4, self.l5 = .155, .099, .095, .055, .105
+        # self.l1, self.l2, self.l3, self.l4, self.l5 = .155, .099, .095, .055, .105
+        self.l1, self.l2, self.l3, self.l4, self.l5 = 15.5, 9.9, 9.5, 5.5, 10.5
+
 
         self.dh_params = np.zeros((5,4))
-        self.T = np.array([np.eye(4) for _ in range(5)])
-        self.T_cumulative = np.array([np.eye(4) for _ in range(5)])
+        # self.T = np.array([np.eye(4) for _ in range(5)])
+        self.T = np.zeros((5, 4, 4))
+        # self.T_cumulative = np.array([np.eye(4) for _ in range(5)])
+        self.T_cumulative = [np.eye(4)]
         self.jacobian = np.zeros((3, 5))
         self.inv_jacobian = np.zeros((5, 3))
 
@@ -72,7 +76,7 @@ class HiwonderRobot:
         print(f'---------------------------------------------------------------------')
         
         # self.set_base_velocity(cmd)
-        self.set_arm_velocity(cmd)
+        
 
         ######################################################################
 
@@ -86,17 +90,29 @@ class HiwonderRobot:
             [(np.pi / 2) + theta[1], 0, self.l2, 0],
             [-theta[2], 0, self.l3, 0],
             [theta[3], 0, self.l4 + self.l5, theta[4]],
-            # [np.deg2rad(theta[3]), 0, self.l4, (np.pi / 2)],
+            # [theta[3], 0, self.l4, (np.pi / 2)],
             [(-np.pi / 2), 0, 0, (-np.pi / 2)],
-            # [0, 0, self.l5, np.deg2rad(theta[4])],
+            # [0, 0, self.l5, theta[4]],
         ]
+        # self.dh_params = [
+        #     [theta[0], self.l1, 0, (-np.pi / 2)],
+        #     [theta[1] - (np.pi/2), 0, self.l2, np.pi],
+        #     [theta[2], 0, self.l3, np.pi],
+        #     [theta[3] + (np.pi/2), 0, 0, (np.pi)],
+        #     [theta[4], self.l4+self.l5, 0, 0]
+        # ]
 
         for index, dh_item in enumerate(self.dh_params):
             self.T[index] = ut.dh_to_matrix(dh_item)
 
+        # print(len(self.T))
+
         self.T_cumulative = [np.eye(4)]
-        for i in range(5):
-            self.T_cumulative.append(self.T_cumulative[-1] @ self.T[i])
+        # self.T_cumulative = np.array(self.T_cumulative)
+        for i in range(len(self.T)):
+            self.T_cumulative.append(np.array(self.T_cumulative[-1] @ self.T[i]))
+
+        # print(self.T_cumulative)
 
         # Extract end-effector position from final transformation matrix
         position = [
@@ -108,6 +124,8 @@ class HiwonderRobot:
         ######################################################################
 
         print(f'[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n')
+
+        self.set_arm_velocity(cmd)
 
 
     def set_base_velocity(self, cmd: ut.GamepadCmds):
@@ -133,6 +151,67 @@ class HiwonderRobot:
     # Methods for interfacing with the 5-DOF robotic arm
     # -------------------------------------------------------------
 
+    def compute_Jacobian(self):
+
+        # Compute Jacobian matrix for the robot arm
+        angles_rad = np.deg2rad(self.joint_values)
+
+        sigma1 = np.cos(angles_rad[0] - angles_rad[1] + angles_rad[2] - angles_rad[3])
+        sigma2 = np.cos(angles_rad[0] + angles_rad[1] - angles_rad[2] + angles_rad[3])
+        sigma6 = np.sin(angles_rad[1] - angles_rad[2] + angles_rad[3])
+        sigma8 = np.cos(angles_rad[1] - angles_rad[2] + angles_rad[3])
+        sigma7 = self.l3 * np.cos(angles_rad[1] - angles_rad[2])
+        sigma5 = self.l3 * np.sin(angles_rad[1] - angles_rad[2])
+        sigma3 = self.l4 * sigma6 + self.l5 * sigma6 + self.l2 * np.sin(angles_rad[1]) + sigma5
+        sigma4 = self.l4 * sigma8 + self.l5 * sigma8 + self.l2 * np.cos(angles_rad[1]) + sigma7
+        
+        J_v = np.array([
+            [np.sin(angles_rad[0]) * sigma3, -np.cos(angles_rad[0]) * sigma4, 
+            (self.l4 * sigma1 / 2) + (self.l5 * sigma1 / 2) + (self.l3 * np.cos(angles_rad[0] + angles_rad[1] - angles_rad[2]) / 2) + 
+            (self.l3 * np.cos(angles_rad[0] - angles_rad[1] + angles_rad[2]) / 2) + (self.l4 * sigma2 / 2) + (self.l5 * sigma2 / 2),
+            -((self.l4 + self.l5) * (sigma1 + sigma2) / 2), 0],
+            [-np.cos(angles_rad[0]) * sigma3, -np.sin(angles_rad[0]) * sigma4, 
+            np.sin(angles_rad[0]) * (self.l4 * sigma8 + self.l5 * sigma8 + sigma7),
+            -((self.l4 + self.l5) * (np.sin(angles_rad[0] + angles_rad[1] - angles_rad[2] + angles_rad[3]) + np.sin(angles_rad[0] - angles_rad[1] + angles_rad[2] - angles_rad[3])) / 2), 0],
+            [0, -self.l4 * sigma6 - self.l5 * sigma6 - self.l2 * np.sin(angles_rad[1]) - sigma5, self.l4 * sigma6 + self.l5 * sigma6 + sigma5, -sigma6 * (self.l4 + self.l5), 0]
+        ])
+
+        return J_v
+
+    def jacobian_other(self):
+
+
+        t_cumul = self.T[0] @ self.T[1] @ self.T[2] @ self.T[3] @ self.T[4]
+
+        J = np.empty((3, 5))
+
+        t1 = t_cumul[0:3, 3]
+        r1 = np.array([0, 0, 1])
+        j1 = np.cross(r1, t1)
+        J[0:3, 0] = j1
+
+        t2 = t_cumul[0:3, 3] - self.T[0][0:3, 3]
+        r2 = self.T[0][0:3, 2]
+        j2 = np.cross(r2, t2)
+        J[0:3, 1] = j2
+
+        t3 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1])[0:3, 3]
+        r3 = (self.T[0] @ self.T[1])[0:3, 2]
+        j3 = np.cross(r3, t3)
+        J[0:3, 2] = j3
+
+        t4 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1] @ self.T[2])[0:3, 3]
+        r4 = (self.T[0] @ self.T[1] @ self.T[2])[0:3, 2]
+        j4 = np.cross(r4, t4)
+        J[0:3, 3] = j4
+
+        t5 = t_cumul[0:3, 3] - (self.T[0] @ self.T[1] @ self.T[2] @ self.T[3])[0:3, 3]
+        r5 = (self.T[0] @ self.T[1] @ self.T[2] @ self.T[3])[0:3, 2]
+        j5 = np.cross(r5, t5)
+        J[0:3, 4] = j5
+
+        return J
+
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
 
@@ -147,16 +226,35 @@ class HiwonderRobot:
 
         thetalist_dot = np.zeros((5))
 
+        # print(len(self.T_cumulative))
+        # self.T_cumulative = np.array(self.T_cumulative)
+        # print(self.T_cumulative.shape)
+
+        # J = np.zeros((5, 3))
+        # # Extracts the translational component to get from frame 0 to the end-effector frame
+        # d = self.T_cumulative[-1] @ np.vstack([0, 0, 0, 1])
+
+        # # Calculates the jacobian by crossing the distance to the end-effector and the z component of rotation
+        # for i in range(0, 5):
+        #     T_i = self.T_cumulative[i]
+        #     z = T_i @ np.vstack([0, 0, 1, 0])
+        #     d1 = T_i @ np.vstack([0, 0, 0, 1])
+        #     r = np.array([d[0] - d1[0], d[1] - d1[1], d[2] - d1[2]]).flatten()
+        #     J[i] = np.cross(z[:3].flatten(), r.flatten())
+
+        # self.jacobian = np.transpose(J)
         for index, transform in enumerate(self.T_cumulative):
-            if index == 0:
-                self.jacobian[:, index] = np.cross(K_VEC, self.T_cumulative[-1][:3, 3])
-                continue
-            elif index == 5:
+            if index == 5:
                 break
-            self.jacobian[:, index] = np.cross(
-                transform[:3, :3] @ K_VEC,
-                (self.T_cumulative[-1][:3, 3] - transform[:3, 3]),
-            )
+            else:
+                self.jacobian[:, index] = np.cross(
+                    transform[:3, :3] @ K_VEC,
+                    (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
+                )
+        # self.jacobian = self.jacobian_other()
+        # self.jacobian = self.compute_Jacobian()
+
+        # print(self.jacobian)
 
         self.inv_jacobian = np.linalg.pinv(self.jacobian)
 
@@ -168,7 +266,7 @@ class HiwonderRobot:
         thetalist_dot = np.rad2deg(self.inv_jacobian @ vel)
         # thetalist_dot = self.inv_jacobian @ vel
 
-        thetalist_unbounded = thetalist_dot.copy()
+        # thetalist_unbounded = thetalist_dot.copy()
 
         for joint, limits in enumerate(self.vel_limits):
             if thetalist_dot[joint] < limits[0]:
@@ -182,12 +280,12 @@ class HiwonderRobot:
         print(f'[DEBUG] Current thetalist (deg) = {self.joint_values}') 
         print(f'[DEBUG] linear vel: {[round(vel[0], 3), round(vel[1], 3), round(vel[2], 3)]}')
         print(f'[DEBUG] thetadot (deg/s) = {[round(td,2) for td in thetalist_dot]}')
-        print(f'[DEBUG] thetadot_unbounded (deg/s) = {[round(td,2) for td in thetalist_unbounded]}')
+        # print(f'[DEBUG] thetadot_unbounded (deg/s) = {[round(td,2) for td in thetalist_unbounded]}')
 
 
         # Update joint angles
-        dt = 0.2 # Fixed time step
-        K = .2 # mapping gain for individual joint control
+        dt = 0.5 # Fixed time step
+        K = 10 # mapping gain for individual joint control
         new_thetalist = [0.0]*6
 
         # linear velocity control
