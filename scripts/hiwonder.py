@@ -23,8 +23,24 @@ K_VEC = [0, 0, 1]  # Used in isolating the Z component of transformation matrice
 DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
-IK_POINTS = [ut.EndEffector(), ut.EndEffector(), ut.EndEffector(), ut.EndEffector()]
-ik_iterator = 0
+IK_POINTS = [
+    ut.EndEffector(
+        x=14.795,
+        y=6.026,
+        z=5.876,
+        rotx=-2.755,
+        roty=0.014,
+        rotz=3.142
+    ),
+    ut.EndEffector(
+        x=-1.155,
+        y=-10.183,
+        z=10.257,
+        rotx=1.458,
+        roty=0.214,
+        rotz=3.142
+    )
+]
 soln = 0
 
 
@@ -65,6 +81,8 @@ class HiwonderRobot:
         self.T_cumulative = [np.eye(4)]
         self.jacobian = np.zeros((3, 5))
         self.inv_jacobian = np.zeros((5, 3))
+
+        self.ik_iterator = -1
 
         self.move_to_home_position()
 
@@ -119,10 +137,13 @@ class HiwonderRobot:
             self.T_cumulative[-1][2, 3],
         ]
 
+        roll, pitch, yaw = ut.rotm_to_euler(self.T_cumulative[-1][:3, :3])
+
         ######################################################################
 
         print(
-            f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n"
+            f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
+            [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
         )
 
         if cmd.utility_btn:
@@ -154,10 +175,10 @@ class HiwonderRobot:
     # -------------------------------------------------------------
 
     def analytical_ik(self):
-        ik_iterator += 1
-        if ik_iterator == len(IK_POINTS):
-            ik_iterator = 0
-        EE = IK_POINTS[ik_iterator]
+        self.ik_iterator += 1
+        if self.ik_iterator == len(IK_POINTS):
+            self.ik_iterator = 0
+        EE = IK_POINTS[self.ik_iterator]
 
         x, y, z = EE.x, EE.y, EE.z
 
@@ -228,7 +249,7 @@ class HiwonderRobot:
             angs[4] = ut.wraptopi(atan2(R_35[2, 0], R_35[2, 1]) + PI)
 
             # Check if the current configuration is valid
-            if ut.check_joint_limits(angs, self.theta_limits):
+            if ut.check_joint_limits(angs, np.deg2rad(self.joint_limits)):
                 # Check if we've reached either the requested `soln` or the last valid solution
                 if soln is valid_solns_count or valid_solns_count is len(solns) - 1:
                     new_thetalist[0:5] = angs
@@ -242,7 +263,7 @@ class HiwonderRobot:
                 new_thetalist[0:5] = last_valid
         
         new_thetalist[5] = self.joint_values[5]
-        self.set_joint_values(new_thetalist, radians=True)
+        self.set_joint_values(new_thetalist, duration=1000, radians=True)
 
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
@@ -301,7 +322,7 @@ class HiwonderRobot:
 
         # Update joint angles
         dt = 0.5  # Fixed time step
-        K = 10  # mapping gain for individual joint control
+        K = 500  # mapping gain for individual joint control
         new_thetalist = [0.0] * 6
 
         # linear velocity control
