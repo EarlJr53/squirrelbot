@@ -16,6 +16,7 @@ from math import sin, cos, atan, acos, asin, sqrt, atan2
 WHEEL_RADIUS = 0.047  # meters
 BASE_LENGTH_X = 0.096  # meters
 BASE_LENGTH_Y = 0.105  # meters
+BASE_SCALE = 100
 
 PI = 3.1415926535897932384
 K2 = [1, 0, 0]
@@ -88,7 +89,7 @@ class HiwonderRobot:
 
         print(f"---------------------------------------------------------------------")
 
-        # self.set_base_velocity(cmd)
+        self.set_base_velocity(cmd)
 
         ######################################################################
 
@@ -147,23 +148,26 @@ class HiwonderRobot:
         """
         ######################################################################
         
-        speed = [0] * 4
+        speed = np.zeros(4)
 
         vx, vy, w = cmd.base_vx, cmd.base_vy, cmd.base_w
 
         v_ang = atan2(vy, vx)
         v_mag = sqrt(vx**2 + vy**2)
 
-        speed[0] = sin(v_ang + (PI / 4)) * v_mag + w
-        speed[1] = sin(v_ang - (PI / 4)) * v_mag + w
-        speed[2] = sin(v_ang - (PI / 4)) * v_mag + w
-        speed[3] = sin(v_ang + (PI / 4)) * v_mag + w
+        speed[0] = (sin(v_ang - (PI / 4)) * v_mag) + w
+        speed[1] = (-sin(v_ang + (PI / 4)) * v_mag) - w
+        speed[2] = (-sin(v_ang + (PI / 4)) * v_mag) + w
+        speed[3] = (sin(v_ang - (PI / 4)) * v_mag) - w
 
-        if max(speed) > 1 or max(speed < -1):
+        if max(speed) > 1 or max(speed) < -1:
             speed /= abs(max(speed))
+
+        speed = speed * BASE_SCALE
 
         ######################################################################
 
+        print(speed)
         # Send speeds to motors
         self.board.set_motor_speed(speed)
         time.sleep(self.speed_control_delay)
