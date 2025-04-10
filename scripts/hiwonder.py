@@ -18,29 +18,48 @@ BASE_LENGTH_X = 0.096  # meters
 BASE_LENGTH_Y = 0.105  # meters
 
 PI = 3.1415926535897932384
-K2 = [1, 0, 0]
 K_VEC = [0, 0, 1]  # Used in isolating the Z component of transformation matrices
 DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
+# IK_POINTS = [
+#     ut.EndEffector(
+#         x=14.795,
+#         y=6.026,
+#         z=5.876,
+#         rotx=-2.755,
+#         roty=0.014,
+#         rotz=3.142
+#     ),
+#     ut.EndEffector(
+#         x=-1.155,
+#         y=-10.183,
+#         z=10.257,
+#         rotx=1.458,
+#         roty=0.214,
+#         rotz=3.142
+#     )
+# ]
+
 IK_POINTS = [
     ut.EndEffector(
-        x=14.795,
-        y=6.026,
-        z=5.876,
-        rotx=-2.755,
-        roty=0.014,
-        rotz=3.142
+        x=23.356,
+        y=0,
+        z=17.4,
+        rotx=0,
+        roty=1.5,
+        rotz=0
     ),
     ut.EndEffector(
-        x=-1.155,
-        y=-10.183,
-        z=10.257,
-        rotx=1.458,
-        roty=0.214,
-        rotz=3.142
+        x=30,
+        y=0,
+        z=17.4,
+        rotx=0,
+        roty=1.5,
+        rotz=0
     )
 ]
+
 soln = 0
 
 
@@ -79,8 +98,13 @@ class HiwonderRobot:
         self.dh_params = np.zeros((5, 4))
         self.T = np.zeros((5, 4, 4))
         self.T_cumulative = [np.eye(4)]
-        self.jacobian = np.zeros((3, 5))
-        self.inv_jacobian = np.zeros((5, 3))
+
+        self.jacobian_v = np.zeros((3, 5))
+        self.inv_jacobian_v = np.zeros((5, 3))
+        self.jacobian_w = np.zeros((3, 5))
+        self.inv_jacobian_w = np.zeros((5, 3))
+        self.jacobian = np.zeros((6, 5))
+        self.inv_jacobian = np.zeros((5, 6))
 
         self.ik_iterator = -1
 
@@ -90,25 +114,15 @@ class HiwonderRobot:
     # Methods for interfacing with the mobile base
     # -------------------------------------------------------------
 
-    def set_robot_commands(self, cmd: ut.GamepadCmds):
-        """Updates robot base and arm based on gamepad commands.
-
-        Args:
-            cmd (GamepadCmds): Command data class with velocities and joint commands.
-        """
-
-        if cmd.arm_home:
-            self.move_to_home_position()
-
-        print(f"---------------------------------------------------------------------")
-
-        # self.set_base_velocity(cmd)
-
-        ######################################################################
-
+    def forward_kinematics(self, theta=None, radians=False):
         position = [0] * 3
 
-        theta = np.deg2rad(self.joint_values.copy())
+        if theta is None:
+            theta = np.deg2rad(self.joint_values.copy())
+        else:
+            if not radians:
+                theta = np.deg2rad(theta)
+
 
         # Initialize DH parameters [theta, d, a, alpha]
         self.dh_params = [
@@ -138,18 +152,71 @@ class HiwonderRobot:
         ]
 
         roll, pitch, yaw = ut.rotm_to_euler(self.T_cumulative[-1][:3, :3])
+        return position, roll, pitch, yaw
+
+    def set_robot_commands(self, cmd: ut.GamepadCmds):
+        """Updates robot base and arm based on gamepad commands.
+
+        Args:
+            cmd (GamepadCmds): Command data class with velocities and joint commands.
+        """
+
+        if cmd.arm_home:
+            self.move_to_home_position()
+
+        # print(f"---------------------------------------------------------------------")
+
+        # self.set_base_velocity(cmd)
 
         ######################################################################
 
-        print(
-            f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
-            [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
-        )
+        # position = [0] * 3
+
+        # theta = np.deg2rad(self.joint_values.copy())
+
+        # # Initialize DH parameters [theta, d, a, alpha]
+        # self.dh_params = [
+        #     [theta[0], self.l1, 0, (np.pi / 2)],
+        #     [(np.pi / 2) + theta[1], 0, self.l2, 0],
+        #     [-theta[2], 0, self.l3, 0],
+        #     [theta[3], 0, self.l4 + self.l5, theta[4]],
+        #     [(-np.pi / 2), 0, 0, (-np.pi / 2)],
+        # ]
+
+        # # Calculate transformation matrices from DH table
+        # for index, dh_item in enumerate(self.dh_params):
+        #     self.T[index] = ut.dh_to_matrix(dh_item)
+
+        # # Set T0_0 to the identity matrix
+        # self.T_cumulative = [np.eye(4)]
+
+        # # Calculate remaining cumulative transformation matrices
+        # for i in range(len(self.T)):
+        #     self.T_cumulative.append(np.array(self.T_cumulative[-1] @ self.T[i]))
+
+        # # Extract end-effector position from final transformation matrix
+        # position = [
+        #     self.T_cumulative[-1][0, 3],
+        #     self.T_cumulative[-1][1, 3],
+        #     self.T_cumulative[-1][2, 3],
+        # ]
+
+        # roll, pitch, yaw = ut.rotm_to_euler(self.T_cumulative[-1][:3, :3])
+
+        position, roll, pitch, yaw = self.forward_kinematics()
+
+        ######################################################################
+
+        # print(
+        #     f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
+        #     [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
+        # )
 
         if cmd.utility_btn:
-            self.analytical_ik()
+            self.numerical_ik()
         else:
-            self.set_arm_velocity(cmd)
+            pass
+            # self.set_arm_velocity(cmd)
 
     def set_base_velocity(self, cmd: ut.GamepadCmds):
         """Computes wheel speeds based on joystick input and sends them to the board"""
@@ -173,6 +240,38 @@ class HiwonderRobot:
     # -------------------------------------------------------------
     # Methods for interfacing with the 5-DOF robotic arm
     # -------------------------------------------------------------
+
+    def get_jacobian(self, lamb=0.1):
+
+        # Calculate Jacobian from cumulative transformation matrices
+        for index, transform in enumerate(self.T_cumulative):
+            if index == 5:  # Don't need the T4_5 matrix for this step
+                break
+            elif index == 4:
+                self.jacobian_v[:, index] = np.cross(
+                    transform[:3, :3] @ [1, 0, 0],
+                    (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
+                )
+                self.jacobian_w[:, index] = transform[:3, :3] @ [1, 0, 0]
+            else:
+                # For each column of the Jacobian,
+                self.jacobian_v[:, index] = np.cross(
+                    transform[:3, :3] @ K_VEC,
+                    (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
+                )
+                self.jacobian_w[:, index] = transform[:3, :3] @ K_VEC
+
+        # Invert speed for flipped motor
+        self.jacobian_v[:, 2] = -self.jacobian_v[:, 2]
+        self.jacobian = np.concatenate((self.jacobian_v, self.jacobian_w))
+
+        # Generate pseudoinverse of Jacobian
+        
+        self.inv_jacobian = np.transpose(self.jacobian) @ np.linalg.inv(self.jacobian @ np.transpose(self.jacobian) + lamb**2 * np.eye(len(self.jacobian)))
+        self.inv_jacobian_v = np.transpose(self.jacobian_v) @ np.linalg.inv(self.jacobian_v @ np.transpose(self.jacobian_v) + lamb**2 * np.eye(len(self.jacobian_v)))
+        
+        # self.inv_jacobian = np.linalg.pinv(self.jacobian)
+        # self.inv_jacobian_v = np.linalg.pinv(self.jacobian_v)
 
     def analytical_ik(self):
         self.ik_iterator += 1
@@ -265,6 +364,92 @@ class HiwonderRobot:
         new_thetalist[5] = self.joint_values[5]
         self.set_joint_values(new_thetalist, duration=1000, radians=True)
 
+    def numerical_ik(self, tol=0.5, seeds=5, ilimit=100):
+
+        self.ik_iterator += 1
+        if self.ik_iterator == len(IK_POINTS):
+            self.ik_iterator = 0
+        EE = IK_POINTS[self.ik_iterator]
+
+        xd = np.asarray([EE.x, EE.y, EE.z, EE.rotx, EE.roty, EE.rotz])
+        thi = np.deg2rad(self.joint_values[:-1])
+        position, roll, pitch, yaw = self.forward_kinematics(theta=thi, radians=True)
+        
+        f_thi = np.asarray([position[0], position[1], position[2], roll, pitch, yaw])
+        err = xd - f_thi
+        err[-3:] = err[-3:]*2
+        # print("th i\t", np.rad2deg(thi).round(2))
+        # print("Xd\t", xd.round(2))
+        # print("X\t", f_thi.round(2))
+        # print("error\t", err.round(2), np.round(np.linalg.norm(err), 5))
+
+        min_err = err
+        min_err_thi = thi.copy()
+        
+        resets = 0
+        count = 0
+
+        while np.linalg.norm(err) > tol and resets < seeds:
+            while np.linalg.norm(err) > tol and count < ilimit:
+                count += 1
+
+                self.get_jacobian()
+                step = self.inv_jacobian @ (err*0.5)
+                
+                # print("step\t", np.rad2deg((step)).round(2))
+                # print("th i\t", np.rad2deg(thi).round(2))
+
+                thi = thi + step
+                # print("th i+1\t", np.rad2deg(thi).round(2))
+                for joint, limits in enumerate(self.joint_limits[:-1]):
+                    if thi[joint] < np.deg2rad(limits[0]):
+                        thi[joint] = np.deg2rad(limits[0]) + np.pi/3
+                    elif thi[joint] > np.deg2rad(limits[1]):
+                        thi[joint] = np.deg2rad(limits[1]) - np.pi/3
+                # print("th i+1\t", np.rad2deg(thi).round(2))
+
+                position, roll, pitch, yaw = self.forward_kinematics(theta=thi, radians=True)
+                f_thi = np.asarray([position[0], position[1], position[2], roll, pitch, yaw])
+                err = xd - f_thi
+                err[-3:] = err[-3:]*2
+                # print("th i\t", np.rad2deg(thi).round(2))
+                # print("Xd\t", xd.round(2))
+                # print("X\t", f_thi.round(2))
+                # print("error\t", err.round(2), np.round(np.linalg.norm(err), 5))
+
+                if np.linalg.norm(err) < np.linalg.norm(min_err):
+                    min_err = err
+                    min_err_thi = thi.copy()
+                    print("new min\t", np.round(np.rad2deg(min_err_thi), 2), 
+                        "\n\t", np.round(min_err, 2), np.round(np.linalg.norm(min_err),2))
+
+            if np.linalg.norm(err) > tol:
+                resets += 1
+                count = 0
+                thi = [
+                    np.deg2rad( np.random.randint( int(lim[0]) , int(lim[1]) ) ) for lim in self.joint_limits[:-1]
+                ]
+        
+        print("min\t", np.round(np.rad2deg(min_err_thi), 2), 
+            "\n\t", np.round(min_err, 2), np.round(np.linalg.norm(min_err),2))
+        new_thetalist = [0.0] * 6
+
+        if np.linalg.norm(err) > tol:
+            thi = min_err_thi.copy()
+            print("solution not found")
+        new_thetalist[:-1] = thi.copy()
+
+        new_thetalist[5] = self.joint_values[5]
+        self.set_joint_values(new_thetalist, duration=1000, radians=True)
+        position, roll, pitch, yaw = self.forward_kinematics(theta=thi, radians=True)
+        f_thi = np.asarray([position[0], position[1], position[2], roll, pitch, yaw])
+        err = xd - f_thi
+        print("th i\t", np.rad2deg(thi).round(2))
+        print("Xd\t", xd.round(2))
+        print("X\t", f_thi.round(2))
+        print("error\t", err.round(2), np.round(np.linalg.norm(err), 5))
+
+
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
 
@@ -278,32 +463,33 @@ class HiwonderRobot:
 
         thetalist_dot = np.zeros((5))
 
-        # Calculate Jacobian from cumulative transformation matrices
-        for index, transform in enumerate(self.T_cumulative):
-            if index == 5:  # Don't need the T4_5 matrix for this step
-                break
-            else:
-                # For each column of the Jacobian,
-                self.jacobian[:, index] = np.cross(
-                    transform[:3, :3] @ K_VEC,
-                    (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
-                )
+        # # Calculate Jacobian from cumulative transformation matrices
+        # for index, transform in enumerate(self.T_cumulative):
+        #     if index == 5:  # Don't need the T4_5 matrix for this step
+        #         break
+        #     else:
+        #         # For each column of the Jacobian,
+        #         self.jacobian_v[:, index] = np.cross(
+        #             transform[:3, :3] @ K_VEC,
+        #             (self.T_cumulative[5][:3, 3] - transform[:3, 3]),
+        #         )
 
-        # Invert speed for flipped motor
-        self.jacobian[:, 2] = -self.jacobian[:, 2]
+        # # Invert speed for flipped motor
+        # self.jacobian_v[:, 2] = -self.jacobian_v[:, 2]
 
-        # Generate pseudoinverse of Jacobian
-        self.inv_jacobian = np.linalg.pinv(self.jacobian)
+        # # Generate pseudoinverse of Jacobian
+        # self.inv_jacobian_v = np.linalg.pinv(self.jacobian_v)
+        self.get_jacobian()
 
         # Calculate determinant of Jacobian for singularity avoidance
-        det_J = np.linalg.det(np.dot(self.jacobian, np.transpose(self.jacobian)))
+        det_J = np.linalg.det(np.dot(self.jacobian_v, np.transpose(self.jacobian_v)))
 
         # Scale EE velocity down if close to a singularity
         if abs(det_J) < DET_J_THRESH:
             vel = vel * VEL_SCALE
 
         # Get desired joint velocities from inverse Jacobian and EE velocity
-        thetalist_dot = np.rad2deg(self.inv_jacobian @ vel)
+        thetalist_dot = np.rad2deg(self.inv_jacobian_v @ vel)
 
         # Clip joint velocities to present max velocities
         for joint, limits in enumerate(self.vel_limits):
