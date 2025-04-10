@@ -24,22 +24,8 @@ DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
 IK_POINTS = [
-    ut.EndEffector(
-        x=14.795,
-        y=6.026,
-        z=5.876,
-        rotx=-2.755,
-        roty=0.014,
-        rotz=3.142
-    ),
-    ut.EndEffector(
-        x=-1.155,
-        y=-10.183,
-        z=10.257,
-        rotx=1.458,
-        roty=0.214,
-        rotz=3.142
-    )
+    ut.EndEffector(x=14.795, y=6.026, z=5.876, rotx=-2.755, roty=0.014, rotz=3.142),
+    ut.EndEffector(x=-1.155, y=-10.183, z=10.257, rotx=1.458, roty=0.214, rotz=3.142),
 ]
 soln = 0
 
@@ -160,9 +146,21 @@ class HiwonderRobot:
         
         """
         ######################################################################
-        # insert your code for finding "speed"
-
+        
         speed = [0] * 4
+
+        vx, vy, w = cmd.base_vx, cmd.base_vy, cmd.base_w
+
+        v_ang = atan2(vy, vx)
+        v_mag = sqrt(vx**2 + vy**2)
+
+        speed[0] = sin(v_ang + (PI / 4)) * v_mag + w
+        speed[1] = sin(v_ang - (PI / 4)) * v_mag + w
+        speed[2] = sin(v_ang - (PI / 4)) * v_mag + w
+        speed[3] = sin(v_ang + (PI / 4)) * v_mag + w
+
+        if max(speed) > 1 or max(speed < -1):
+            speed /= abs(max(speed))
 
         ######################################################################
 
@@ -261,7 +259,7 @@ class HiwonderRobot:
             # If we've made it to the end and don't have another valid solution, use the most recent valid one
             elif valid_solns_count is len(solns) - 1:
                 new_thetalist[0:5] = last_valid
-        
+
         new_thetalist[5] = self.joint_values[5]
         self.set_joint_values(new_thetalist, duration=1000, radians=True)
 
