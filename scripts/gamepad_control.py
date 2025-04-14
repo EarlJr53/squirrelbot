@@ -78,7 +78,7 @@ class GamepadControl:
                 # print(f'type: {event.code}, state: {event.state}')
 
         gamepad_cmds.arm_home = int(self.ARM_HOME)
-        gamepad_cmds.utility_btn = int(self.COLLECT_BTN)
+        gamepad_cmds.collect_btn = int(self.COLLECT_BTN)
 
         if self.ARM_FLAG:
             gamepad_cmds.arm_vx = self.map_value(
@@ -131,7 +131,7 @@ class GamepadControl:
                 self.abs_y, [32767, -32767], [-0.5, 0.5]
             )
             gamepad_cmds.base_w = self.map_value(
-                self.abs_rx, [-32767, 32767], [-0.5, 0.5]
+                self.abs_rx, [32767, -32767], [-0.5, 0.5]
             )
 
         # self.last_command_time = current_time  # Update last command time
@@ -146,9 +146,9 @@ class GamepadControl:
             "ABS_Y": ("abs_y", event.state),
             "ABS_RX": ("abs_rx", event.state),
             "ABS_RY": ("abs_ry", event.state),
-            # 'BTN_TL': ('UTILITY_BTN', bool(event.state)),
+            'BTN_TR': ('COLLECT_BTN', bool(event.state)),
             "BTN_TL": ("MANUAL_ARM_FLAG", bool(event.state)),
-            "BTN_TR": ("ARM_FLAG", bool(event.state)),
+            # "BTN_TR": ("ARM_FLAG", bool(event.state)),
             "BTN_WEST": ("ARM_J1_FLAG", bool(event.state)),
             "BTN_EAST": ("ARM_J2_FLAG", bool(event.state)),
             "BTN_SOUTH": ("ARM_J3_FLAG", bool(event.state)),

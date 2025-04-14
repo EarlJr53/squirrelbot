@@ -24,10 +24,13 @@ K_VEC = [0, 0, 1]  # Used in isolating the Z component of transformation matrice
 DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
+DROP_POINT = ut.EndEffector(x=-6.48, y=0.0, z=12.098, rotx=3.142, roty=-0.392, rotz=3.142)
+
 IK_POINTS = [
     ut.EndEffector(x=14.795, y=6.026, z=5.876, rotx=-2.755, roty=0.014, rotz=3.142),
     ut.EndEffector(x=-1.155, y=-10.183, z=10.257, rotx=1.458, roty=0.214, rotz=3.142),
 ]
+
 soln = 0
 
 
@@ -37,8 +40,8 @@ class HiwonderRobot:
         self.board = BoardController()
         self.servo_bus = ServoBusController()
 
-        self.joint_values = [0, 0, 0, -86.09, 0, 0]  # degrees
-        self.home_position = [0, 0, 0, -86.09, 0, 0]  # degrees
+        self.joint_values = [0, 20, 120, -100, 0, 0]  # degrees
+        self.home_position = [0, 20, 120, -100, 0, 0]  # degrees
 
         self.joint_limits = [
             [-120, 120],
@@ -57,8 +60,9 @@ class HiwonderRobot:
             [-30, 30],
             [-30, 30],
         ]
-        self.joint_control_delay = 0.2  # secs
+        self.joint_control_delay = 0.5  # secs
         self.speed_control_delay = 0.2
+        self.ik_control_delay = 2
 
         # Link lengths (cm)
         self.l1, self.l2, self.l3, self.l4, self.l5 = 15.5, 9.9, 9.5, 5.5, 10.5
@@ -133,8 +137,10 @@ class HiwonderRobot:
             [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
         )
 
-        if cmd.utility_btn:
-            self.analytical_ik()
+        # if cmd.utility_btn:
+        #     self.analytical_ik()
+        if cmd.collect_btn:
+            self.collect_cube()
         else:
             self.set_arm_velocity(cmd)
 
@@ -176,11 +182,36 @@ class HiwonderRobot:
     # Methods for interfacing with the 5-DOF robotic arm
     # -------------------------------------------------------------
 
-    def analytical_ik(self):
-        self.ik_iterator += 1
-        if self.ik_iterator == len(IK_POINTS):
-            self.ik_iterator = 0
-        EE = IK_POINTS[self.ik_iterator]
+    def collect_cube(self):
+        joints = self.joint_values
+        joints[5] = -70
+        self.set_joint_values(joints)
+        time.sleep(self.joint_control_delay)
+
+        self.analytical_ik(IK_POINTS[0])
+        time.sleep(self.ik_control_delay)
+
+        joints = self.joint_values
+        joints[5] = -30
+        self.set_joint_values(joints)
+        time.sleep(self.joint_control_delay)
+
+        self.analytical_ik(DROP_POINT)
+        time.sleep(self.ik_control_delay)
+
+        joints = self.joint_values
+        joints[5] = -70
+        self.set_joint_values(joints)
+        time.sleep(self.joint_control_delay)
+
+        self.move_to_home_position()
+
+
+    def analytical_ik(self, EE: ut.EndEffector):
+        # self.ik_iterator += 1
+        # if self.ik_iterator == len(IK_POINTS):
+        #     self.ik_iterator = 0
+        # EE = IK_POINTS[self.ik_iterator]
 
         x, y, z = EE.x, EE.y, EE.z
 
@@ -265,7 +296,7 @@ class HiwonderRobot:
                 new_thetalist[0:5] = last_valid
 
         new_thetalist[5] = self.joint_values[5]
-        self.set_joint_values(new_thetalist, duration=1000, radians=True)
+        self.set_joint_values(new_thetalist, duration=3000, radians=True)
 
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
@@ -352,8 +383,8 @@ class HiwonderRobot:
         if radians:
             theta = np.rad2deg(theta)
 
-        theta = self.enforce_joint_limits(theta, joint_id=joint_id)
-        self.joint_values[joint_id] = theta
+        # !theta = self.enforce_joint_limits(theta, joint_id=joint_id)
+        self.joint_values[joint_id-1] = theta
 
         pulse = self.angle_to_pulse(theta)
         self.servo_bus.move_servo(joint_id, pulse, duration)
