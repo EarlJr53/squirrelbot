@@ -37,8 +37,8 @@ class HiwonderRobot:
         self.board = BoardController()
         self.servo_bus = ServoBusController()
 
-        self.joint_values = [0, 0, 90, -30, 0, 0]  # degrees
-        self.home_position = [0, 0, 90, -30, 0, 0]  # degrees
+        self.joint_values = [0, 0, 0, -86.09, 0, 0]  # degrees
+        self.home_position = [0, 0, 0, -86.09, 0, 0]  # degrees
 
         self.joint_limits = [
             [-120, 120],
