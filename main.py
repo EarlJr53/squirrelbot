@@ -48,6 +48,7 @@ def shutdown_robot():
     print("[INFO] Closing hardware interfaces...")
     robot.board.close()
     robot.servo_bus.close()
+    robot.cap.release()
 
     print("[INFO] Shutdown complete. Safe to power off.")
 

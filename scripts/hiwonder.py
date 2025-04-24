@@ -9,8 +9,10 @@ import time
 import numpy as np
 from board_controller import BoardController
 from servo_bus_controller import ServoBusController
+from trajectory_generator import MultiAxisTrajectoryGenerator
 import utils as ut
-from math import sin, cos, atan, acos, asin, sqrt, atan2
+from math import sin, cos, atan, acos, asin, sqrt, atan2, pi
+import cv2 as cv
 
 # Robot base constants
 WHEEL_RADIUS = 0.047  # meters
@@ -24,7 +26,7 @@ K_VEC = [0, 0, 1]  # Used in isolating the Z component of transformation matrice
 DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
-DROP_POINT = ut.EndEffector(x=-6.48, y=0.0, z=12.098, rotx=3.142, roty=-0.392, rotz=3.142)
+DROP_POINT = ut.EndEffector(x=-13.492, y=2.384, z=17.884, rotx=2.967, roty=-0.676, rotz=3.142)
 
 IK_POINTS = [
     ut.EndEffector(x=14.795, y=6.026, z=5.876, rotx=-2.755, roty=0.014, rotz=3.142),
@@ -40,8 +42,11 @@ class HiwonderRobot:
         self.board = BoardController()
         self.servo_bus = ServoBusController()
 
-        self.joint_values = [0, 20, 120, -100, 0, 0]  # degrees
-        self.home_position = [0, 20, 120, -100, 0, 0]  # degrees
+        self.joint_values = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
+        self.home_position = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
+
+        # self.joint_values = [0, 0, 0, 0, 0, 0]  # degrees
+        # self.home_position = [0, 0, 90, 0, 0, 0]  # degrees
 
         self.joint_limits = [
             [-120, 120],
@@ -75,6 +80,8 @@ class HiwonderRobot:
 
         self.ik_iterator = -1
 
+        self.cap = cv.VideoCapture(0)
+
         self.move_to_home_position()
 
     # -------------------------------------------------------------
@@ -100,6 +107,7 @@ class HiwonderRobot:
         position = [0] * 3
 
         theta = np.deg2rad(self.joint_values.copy())
+        # print("theta", theta)
 
         # Initialize DH parameters [theta, d, a, alpha]
         self.dh_params = [
@@ -122,25 +130,44 @@ class HiwonderRobot:
             self.T_cumulative.append(np.array(self.T_cumulative[-1] @ self.T[i]))
 
         # Extract end-effector position from final transformation matrix
-        position = [
-            self.T_cumulative[-1][0, 3],
-            self.T_cumulative[-1][1, 3],
-            self.T_cumulative[-1][2, 3],
-        ]
+        position = ut.Position(
+            x=self.T_cumulative[-1][0, 3],
+            y=self.T_cumulative[-1][1, 3],
+            z=self.T_cumulative[-1][2, 3],
+        )
 
         roll, pitch, yaw = ut.rotm_to_euler(self.T_cumulative[-1][:3, :3])
 
         ######################################################################
 
-        print(
-            f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
-            [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
-        )
+        # print(
+        #     f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
+        #     [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
+        # )
+        print(f"[DEBUG] XYZ position: X: {round(position.x, 3)}, Y: {round(position.y, 3)}, Z: {round(position.z, 3)}")
+        print(f"[DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)}")
+        
 
         # if cmd.utility_btn:
         #     self.analytical_ik()
         if cmd.collect_btn:
-            self.collect_cube()
+            # self.collect_cube()
+            
+
+            # TODO get vision frames
+            _, img = self.cap.read()
+
+            # TODO find location of the object in camera frame
+            obj_cam_frame = self.detect_cube(img)
+
+            # TODO translate to robot base frame for x, y, z
+            obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
+            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
+
+
+            self.collect_cube_traj(obj_base_frame, position, pitch)
+    
+
         else:
             self.set_arm_velocity(cmd)
 
@@ -173,7 +200,7 @@ class HiwonderRobot:
 
         ######################################################################
 
-        print(speed)
+        # print(speed)
         # Send speeds to motors
         self.board.set_motor_speed(speed)
         time.sleep(self.speed_control_delay)
@@ -182,39 +209,129 @@ class HiwonderRobot:
     # Methods for interfacing with the 5-DOF robotic arm
     # -------------------------------------------------------------
 
-    def collect_cube(self):
-        joints = self.joint_values
-        joints[5] = -70
-        self.set_joint_values(joints)
-        time.sleep(self.joint_control_delay)
+    # def collect_cube(self):
+    #     # joints = self.joint_values
+    #     # joints[5] = -70
+    #     # self.set_joint_values(joints)
+    #     # time.sleep(self.joint_control_delay)
 
-        self.analytical_ik(IK_POINTS[0])
-        time.sleep(self.ik_control_delay)
 
-        joints = self.joint_values
-        joints[5] = -30
-        self.set_joint_values(joints)
-        time.sleep(self.joint_control_delay)
+    #     self.analytical_ik(IK_POINTS[0])
+    #     time.sleep(self.ik_control_delay)
 
+    #     joints = self.joint_values
+    #     joints[5] = -30
+    #     self.set_joint_values(joints)
+    #     time.sleep(self.joint_control_delay)
+
+    #     self.analytical_ik(DROP_POINT)
+    #     time.sleep(self.ik_control_delay)
+
+    #     joints = self.joint_values
+    #     joints[5] = -70
+    #     self.set_joint_values(joints)
+    #     time.sleep(self.joint_control_delay)
+
+    #     self.move_to_home_position()
+
+    def detect_cube(self, img):
+
+        # mask out floor from cube images
+        gaussianBlur = blur = cv.GaussianBlur(img,(5,5),0)
+        img_grayscale = cv.cvtColor(gaussianBlur, cv.COLOR_BGR2GRAY)
+        # Otsu's thresholding
+        ret, bw_thresh = cv.threshold(img_grayscale,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
+        bw_thresh = cv.bitwise_and(gaussianBlur, gaussianBlur, mask=bw_thresh)
+        closing = cv.morphologyEx(bw_thresh, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT,(5,5)))
+        openAfterClosing = cv.morphologyEx(closing, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,(5,5)))
+
+        # get contours
+        finishedMask = cv.cvtColor(openAfterClosing, cv.COLOR_BGR2GRAY)
+        contours, hierarchy = cv.findContours(finishedMask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        cv.drawContours(img, contours, -1, (255,0,255), 3)
+
+        # get bounding boxes and centroids
+
+        # filters contour list so that bounding boxes and centroids of only large enough contours are found
+        filteredContours = []
+        for contour in contours:
+            if cv.contourArea(contour) > 200:
+                filteredContours.append(contour)
+
+        boundingBoxes = []
+        centroids = []
+
+        maxCentroid = [0, 0]
+        maxArea = 0
+
+        # Iterate through contours
+        for i, contour in enumerate(filteredContours):
+            # Get bounding rectangle
+            x, y, w, h = cv.boundingRect(contour)
+            # Calculate centroid
+            center_x = x + w // 2
+            center_y = y + h // 2
+
+            boundingBoxes.append([x, y, w, h])
+            centroids.append([center_x, center_y])
+
+            # * choose which centroid to pursue
+            if cv.contourArea(contour) > maxArea:
+                maxArea = cv.contourArea(contour)
+                maxCentroid = [center_x, center_y]
+
+            # Draw bounding box and centroid
+            cv.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green rectangle
+            cv.circle(img, (center_x, center_y), 5, (0, 255, 0), -1)  # Green circle for centroid
+
+        # Display the image with bounding boxes and centroids
+        print(f"bounding boxes: {boundingBoxes}")
+        print(f"centroids: {centroids}")
+
+        ###### TODO: Calibrate intrinsic parameters
+        K = np.array([[1524, 0, 350.5], [0, 987.1, 80.37], [ 0, 0, 1]])
+            # matrix of camera's intrinsic parameters (K)
+
+        # TODO apply intrinsic transformation to get centroid coordinates in camera frame
+        # use maxCentroid as centroid coordinates and return ut.Position
+        maxCentroid.append(1) #? should this be 1 or the w value?
+        cameraFrame = np.linalg.inv(K) @ maxCentroid
+
+        return ut.Position(x=cameraFrame[0], y=cameraFrame[1], z=cameraFrame[2])
+
+    def collect_cube_traj(self, obj: ut.Position, position, pitch):
+        object_d = np.sqrt(obj.x**2 + obj.y**2)
+        d_adjust = (object_d - 3) / object_d
+        int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=position[2])
+        int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z*d_adjust)
+
+        # Compile waypoints
+        waypoints = [position, int_position_1, int_position_2, obj]
+
+        # Do trajectory generation
+        self.task_space_traj(waypoints, pitch)
+        time.sleep(7)
+        close_pos = self.joint_values
+        close_pos[5] = -20
+        self.set_joint_values(close_pos, duration=100, radians=False)
+        time.sleep(7)
         self.analytical_ik(DROP_POINT)
-        time.sleep(self.ik_control_delay)
-
-        joints = self.joint_values
-        joints[5] = -70
-        self.set_joint_values(joints)
-        time.sleep(self.joint_control_delay)
-
+        time.sleep(7)
+        open_pos = self.joint_values
+        open_pos[5] = -70
+        self.set_joint_values(open_pos, duration=100, radians=False)
+        time.sleep(7)
         self.move_to_home_position()
-
+        time.sleep(7)
 
     def analytical_ik(self, EE: ut.EndEffector):
         # self.ik_iterator += 1
         # if self.ik_iterator == len(IK_POINTS):
         #     self.ik_iterator = 0
         # EE = IK_POINTS[self.ik_iterator]
-
+        
         x, y, z = EE.x, EE.y, EE.z
-
+        print("xyzrpy", x, y, z, EE.rotx, EE.roty, EE.rotz)
         R_05 = ut.euler_to_rotm((EE.rotx, EE.roty, EE.rotz))
         R_05_K = R_05 @ K_VEC
 
@@ -255,9 +372,10 @@ class HiwonderRobot:
         # Keep track of how many valid solutions have been "skipped"
         valid_solns_count = 0
 
-        new_thetalist = [0.0] * 6
+        new_thetalist = np.deg2rad(self.joint_values)
 
         for angs in solns:
+            # print(angs)
             # Temporary DH matrix
             mini_DH = [
                 [angs[0], self.l1, 0, np.pi / 2],
@@ -282,6 +400,7 @@ class HiwonderRobot:
             angs[4] = ut.wraptopi(atan2(R_35[2, 0], R_35[2, 1]) + PI)
 
             # Check if the current configuration is valid
+            # print(angs)
             if ut.check_joint_limits(angs, np.deg2rad(self.joint_limits)):
                 # Check if we've reached either the requested `soln` or the last valid solution
                 if soln is valid_solns_count or valid_solns_count is len(solns) - 1:
@@ -294,9 +413,70 @@ class HiwonderRobot:
             # If we've made it to the end and don't have another valid solution, use the most recent valid one
             elif valid_solns_count is len(solns) - 1:
                 new_thetalist[0:5] = last_valid
+        new_thetalist[5] = np.deg2rad(self.joint_values[5])
+        print("new theta", new_thetalist)
+        new_thetalist = self.enforce_joint_limits(new_thetalist, radians=True)
+        print("new theta", new_thetalist)
+        print()
+        self.set_joint_values(new_thetalist, duration=5000, radians=True)
+        # print("done")
 
-        new_thetalist[5] = self.joint_values[5]
-        self.set_joint_values(new_thetalist, duration=3000, radians=True)
+    def task_space_traj(self, waypoints, pitch, nsteps=10):
+        traj_dofs = None
+        for i in range(len(waypoints)-1):
+            start_vel = None
+            final_vel = None
+            start_acc = None
+            final_acc = None
+            # start_vel = [0.1, 0, 0]
+            # final_vel = [0.1, 0, 0]
+            # start_acc = [0, 0, 0]
+            # final_acc = [0, 0, 0]
+            # if i == 0:
+            #     start_vel = None
+            #     start_acc = None
+            # if i == len(waypoints)-2:
+            #     final_vel = None
+            #     final_acc = None
+
+            traj = MultiAxisTrajectoryGenerator(method="quintic", mode="task", interval=[0, 1], ndof=len(np.array(waypoints[0])), 
+                                                start_pos=np.array(waypoints[i]), final_pos=np.array(waypoints[i+1]), 
+                                                start_vel=start_vel, final_vel=final_vel,
+                                                start_acc=start_acc, final_acc=final_acc)
+            points = traj.generate(nsteps=nsteps)
+            if traj_dofs is not None:
+                traj_dofs = np.concatenate([traj_dofs, points], axis=2)
+            else:
+                traj_dofs = points
+
+        for i in range(nsteps*(len(waypoints)-1)):
+            pos = [dof[0][i] for dof in traj_dofs]
+            ee = ut.EndEffector(
+                x=pos[0], 
+                y=pos[1], 
+                z=pos[2], 
+                rotx=ut.wraptopi(atan2(pos[1], pos[0]) + PI), 
+                roty=pitch, 
+                rotz=PI
+            )
+            self.analytical_ik(ee)
+            time.sleep(0.2) # TODO will prob need to adjust
+        print("DONE")
+            # input()
+
+    def camera_frame_to_base(self, CamFrame: ut.Position):
+        L_A = 0
+        L_B = 0
+        T_03 = self.T_cumulative[2]
+        T_3A = ut.dh_to_matrix([np.deg2rad(self.joint_values[3]), 0, L_A, 0])
+        T_AB = ut.dh_to_matrix([(-np.pi / 2), 0, L_B, (-np.pi / 2)])
+        T_BC = ut.dh_to_matrix([(-np.pi / 2), 0, 0, 0])
+        T_0C = T_03 @ T_3A @ T_AB @ T_BC
+        # T_C0 = np.linalg.inv(T_0C)
+
+        BaseFrame = T_0C @ np.array(CamFrame).append(1)
+        return ut.Position(x=BaseFrame[0], y=BaseFrame[1], z=BaseFrame[2])
+        
 
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
@@ -412,10 +592,10 @@ class HiwonderRobot:
         )  # remap the joint values from software to hardware
 
         for joint_id, theta in enumerate(thetalist, start=1):
-            pulse = self.angle_to_pulse(theta)
+            pulse = self.angle_to_pulse(11*theta/9)
             self.servo_bus.move_servo(joint_id, pulse, duration)
 
-    def enforce_joint_limits(self, thetalist: list) -> list:
+    def enforce_joint_limits(self, thetalist: list, radians=False) -> list:
         """Clamps joint angles within their hardware limits.
 
         Args:
@@ -424,13 +604,17 @@ class HiwonderRobot:
         Returns:
             list: Joint angles within allowable ranges.
         """
+        if radians:
+            return [
+            np.clip(theta, *limit) for theta, limit in zip(thetalist, np.deg2rad(self.joint_limits))
+        ]
         return [
             np.clip(theta, *limit) for theta, limit in zip(thetalist, self.joint_limits)
         ]
 
     def move_to_home_position(self):
         print(f"Moving to home position...")
-        self.set_joint_values(self.home_position, duration=800)
+        self.set_joint_values(self.home_position, duration=2000)
         time.sleep(2.0)
         print(f"Arrived at home position: {self.joint_values} \n")
         time.sleep(1.0)
