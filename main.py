@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.getcwd(), 'scripts'))
 from hiwonder import HiwonderRobot
 from gamepad_control import GamepadControl
 import utils
+import cv2 as cv
 
 
 # Initialize components
@@ -49,6 +50,7 @@ def shutdown_robot():
     robot.board.close()
     robot.servo_bus.close()
     robot.cap.release()
+    cv.destroyAllWindows()
 
     print("[INFO] Shutdown complete. Safe to power off.")
 

@@ -154,15 +154,18 @@ class HiwonderRobot:
             # self.collect_cube()
             
 
-            # TODO get vision frames
-            _, img = self.cap.read()
+            # # TODO get vision frames
+            # _, img = self.cap.read()
+            # # cv.imshow('Frame', img)
 
-            # TODO find location of the object in camera frame
-            obj_cam_frame = self.detect_cube(img)
+            # # TODO find location of the object in camera frame
+            # obj_cam_frame = self.detect_cube(img)
+            # print(obj_cam_frame)
 
-            # TODO translate to robot base frame for x, y, z
-            obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
-            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
+            # # TODO translate to robot base frame for x, y, z
+            # obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
+            # print(obj_base_frame)
+            obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
 
 
             self.collect_cube_traj(obj_base_frame, position, pitch)
@@ -299,14 +302,14 @@ class HiwonderRobot:
 
         return ut.Position(x=cameraFrame[0], y=cameraFrame[1], z=cameraFrame[2])
 
-    def collect_cube_traj(self, obj: ut.Position, position, pitch):
+    def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
         object_d = np.sqrt(obj.x**2 + obj.y**2)
         d_adjust = (object_d - 3) / object_d
-        int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=position[2])
+        int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=pos.z)
         int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z*d_adjust)
 
         # Compile waypoints
-        waypoints = [position, int_position_1, int_position_2, obj]
+        waypoints = [pos, int_position_1, int_position_2, obj]
 
         # Do trajectory generation
         self.task_space_traj(waypoints, pitch)
@@ -465,8 +468,8 @@ class HiwonderRobot:
             # input()
 
     def camera_frame_to_base(self, CamFrame: ut.Position):
-        L_A = 0
-        L_B = 0
+        L_A = 4 # cm
+        L_B = 4 # cm
         T_03 = self.T_cumulative[2]
         T_3A = ut.dh_to_matrix([np.deg2rad(self.joint_values[3]), 0, L_A, 0])
         T_AB = ut.dh_to_matrix([(-np.pi / 2), 0, L_B, (-np.pi / 2)])
@@ -474,7 +477,7 @@ class HiwonderRobot:
         T_0C = T_03 @ T_3A @ T_AB @ T_BC
         # T_C0 = np.linalg.inv(T_0C)
 
-        BaseFrame = T_0C @ np.array(CamFrame).append(1)
+        BaseFrame = T_0C @ np.array(CamFrame).tolist().append(1)
         return ut.Position(x=BaseFrame[0], y=BaseFrame[1], z=BaseFrame[2])
         
 
