@@ -65,6 +65,15 @@ class EndEffector:
     roty: float = 0.0
     rotz: float = 0.0
 
+@dataclass
+class Position:
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    def __array__(self) -> np.ndarray:
+        return np.array([self.x, self.y, self.z])
+
 
 def rotm_to_euler(R) -> tuple:
     """Converts a rotation matrix to Euler angles (roll, pitch, yaw).
@@ -240,6 +249,10 @@ def check_joint_limits(theta: List[float], theta_limits: List[List[float]]) -> b
     """
     for i, th in enumerate(theta):
         if not (theta_limits[i][0] <= th <= theta_limits[i][1]):
+            # print("failed", i)
+            # print(th)
+            # print(theta_limits[i])
+            # print()
             return False
     return True
 
