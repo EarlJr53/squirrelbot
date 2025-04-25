@@ -1,21 +1,36 @@
 """
-Figuring out how to isolate blocks and find their centroids from images of them on the floor
+Undistorts an image, creates a mask with Otsu thresholding, filters the list of
+contours to get only the top face of cubes, finds bounding boxes and centroids 
+of these faces, and gets the coordinates of a centroid in the camera coordinate
+frame. 
 """
 import cv2 as cv
 import numpy as np
+from scipy import linalg
 import matplotlib.pyplot as plt
+import math
 from machinevisiontoolbox.base import *
 from machinevisiontoolbox import *
 
 # get image from cube
 # path_to_image = './block_images/allColors.jpg'#???
-path_to_image = './block_images/lookDownAtFloorwBlocks.jpg'#???
-img = cv.imread(path_to_image) 
+# path_to_image = './block_images/lookDownAtFloorwBlocks.jpg'#???
+# img = cv.imread(path_to_image) 
 
-images = ImageCollection('block_images/*.jpg')
+images = ImageCollection('./block_images/*.jpg') 
+    # must be in this format for calibration to work, can't use meshgrid()
+    # method with 'numpy.ndarray' object which cv.imread() gives
+img = images[11]
 
-###### TODO: Calibrate images
-K = np.array([[1524, 0, 350.5], [0, 987.1, 80.37], [ 0, 0, 1]])
+
+
+#######################
+# undistorting image: #
+#######################
+"""
+img coming into this part must be an image object of the machinevisiontoolbox
+"""
+K = np.array([[460.2, 0, 350.6], [0, 452.4, 235.7], [0, 0, 1]])
     # matrix of camera's intrinsic parameters (K)
 # extracting intrinsic parameters
 u0 = K[0,2]
@@ -23,15 +38,44 @@ v0 = K[1,2]
 fpixel_width = K[0,0]
 fpixel_height = K[1,1]
 
-distortion = [0.5675, -80.26, 0.8333, -0.001611, 874.7] 
+distortion = [-0.4033, 0.2033, 0.00473, 0.001013, -0.05674]  
     # lens distortion parameters
 # extracting distortion parameters
 k1, k2, p1, p2, k3 = distortion
 
+# Convert from pixel coordinates (u, v) to image plane coordinates (x, y)
+U, V = img.meshgrid()
+x = (U - u0) / fpixel_width
+y = (V - v0) / fpixel_height
+
+# Calculate the radial distance of pixels from the principal point
+r = np.sqrt(x**2 + y**2)
+
+# Compute the image coordinate errors due to both radial and tangential distortion
+delta_x = x * (k1*r**2 + k2*r**4 + k3*r**6) + 2*p1*x*y + p2*(r**2 + 2*x**2)
+delta_y = y * (k1*r**2 + k2*r**4 + k3*r**6) + p1*(r**2 + 2*y**2) + p2*x*y
+
+# Distorted retinal coordinates
+xd = x + delta_x 
+yd = y + delta_y
+
+# Convert back from image coordinates to pixel coordinates in the distorted image
+Ud = xd * fpixel_width + u0
+Vd = yd * fpixel_height + v0
+
+# Apply the warp to a distorted image and observe the undistorted image
+img = img.warp(Ud, Vd)
 
 
-
-
+####################################
+# masking and contour shenanigans: #
+####################################
+"""
+img coming into this part is assumed to be an image object of the machinevisiontoolbox
+could comment out first line below this if already a numpy array 
+"""
+# convert image to numpy array
+img = img.image
 
 # mask out floor from cube images
 gaussianBlur = blur = cv.GaussianBlur(img,(5,5),0)
@@ -76,7 +120,22 @@ for contour in filteredContours:
 # Display the image with bounding boxes and centroids
 print(f"bounding boxes: {boundingBoxes}")
 print(f"centroids: {centroids}")
-cv.imshow('boundingBoxes', img)
-cv.waitKey(0)
+# cv.imshow('boundingBoxes', img)
+# cv.waitKey(0)
 
-# find position and orientation of blocks
+
+###############################
+# pos of blocks in cam frame: #
+###############################
+inv_K = np.linalg.inv(K)
+# print(K)
+# print(inv_K)
+
+# appending the normalization factor
+w = 1 # normalization factor
+chosen_block = 0 # index for centroids list
+centroids[chosen_block].append(w)
+# print(centroids[0])
+
+cam_coords = np.matmul(inv_K, centroids[0])
+print(f"coordinates in camera frame: {cam_coords}")
