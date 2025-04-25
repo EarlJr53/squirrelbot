@@ -13,6 +13,8 @@ from trajectory_generator import MultiAxisTrajectoryGenerator
 import utils as ut
 from math import sin, cos, atan, acos, asin, sqrt, atan2, pi
 import cv2 as cv
+from machinevisiontoolbox import Image
+from machinevisiontoolbox.base import convert
 
 # Robot base constants
 WHEEL_RADIUS = 0.047  # meters
@@ -81,6 +83,7 @@ class HiwonderRobot:
         self.ik_iterator = -1
 
         self.cap = cv.VideoCapture(0)
+        # self.cap = VideoCamera(0)
 
         self.move_to_home_position()
 
@@ -155,17 +158,19 @@ class HiwonderRobot:
             
 
             # # TODO get vision frames
-            # _, img = self.cap.read()
+            _, frame = self.cap.read()
+            # im = convert(frame, rgb=False, colororder="BGR", copy=True)
+            img = Image(frame, id=0, colororder="BGR")
             # # cv.imshow('Frame', img)
 
             # # TODO find location of the object in camera frame
-            # obj_cam_frame = self.detect_cube(img)
+            obj_cam_frame = self.detect_cube(img)
             # print(obj_cam_frame)
 
             # # TODO translate to robot base frame for x, y, z
-            # obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
-            # print(obj_base_frame)
-            obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
+            obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
+            print(obj_base_frame)
+            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
 
 
             self.collect_cube_traj(obj_base_frame, position, pitch)
@@ -238,6 +243,62 @@ class HiwonderRobot:
     #     self.move_to_home_position()
 
     def detect_cube(self, img):
+        #*######################
+        #* undistorting image: #
+        #*######################
+        """
+        img coming into this part must be an image object of the machinevisiontoolbox
+        """
+        K = np.array([[460.2, 0, 350.6], [0, 452.4, 235.7], [0, 0, 1]])
+            # matrix of camera's intrinsic parameters (K)
+
+        # extracting intrinsic parameters
+        u0 = K[0,2]
+        v0 = K[1,2]
+        fpixel_width = K[0,0]
+        fpixel_height = K[1,1]
+
+        distortion = [-0.4033, 0.2033, 0.00473, 0.001013, -0.05674]  
+            # lens distortion parameters
+        # extracting distortion parameters
+        k1, k2, p1, p2, k3 = distortion
+
+        # Convert from pixel coordinates (u, v) to image plane coordinates (x, y)
+        U, V = img.meshgrid()
+        x = (U - u0) / fpixel_width
+        y = (V - v0) / fpixel_height
+
+        # Calculate the radial distance of pixels from the principal point
+        r = np.sqrt(x**2 + y**2)
+
+        # Compute the image coordinate errors due to both radial and tangential distortion
+        delta_x = x * (k1*r**2 + k2*r**4 + k3*r**6) + 2*p1*x*y + p2*(r**2 + 2*x**2)
+        delta_y = y * (k1*r**2 + k2*r**4 + k3*r**6) + p1*(r**2 + 2*y**2) + p2*x*y
+
+        # Distorted retinal coordinates
+        xd = x + delta_x 
+        yd = y + delta_y
+
+        # Convert back from image coordinates to pixel coordinates in the distorted image
+        Ud = xd * fpixel_width + u0
+        Vd = yd * fpixel_height + v0
+
+        # Apply the warp to a distorted image and observe the undistorted image
+        img = img.warp(Ud, Vd)
+
+
+
+
+        #*###################################
+        #* masking and contour shenanigans: #
+        #*###################################
+        """
+        img coming into this part is assumed to be an image object of the machinevisiontoolbox
+        could comment out first line below this if already a numpy array 
+        """
+
+        # convert image to numpy array
+        img = img.image
 
         # mask out floor from cube images
         gaussianBlur = blur = cv.GaussianBlur(img,(5,5),0)
@@ -291,16 +352,29 @@ class HiwonderRobot:
         print(f"bounding boxes: {boundingBoxes}")
         print(f"centroids: {centroids}")
 
-        ###### TODO: Calibrate intrinsic parameters
-        K = np.array([[1524, 0, 350.5], [0, 987.1, 80.37], [ 0, 0, 1]])
-            # matrix of camera's intrinsic parameters (K)
+
+        #*##############################
+        #* pos of blocks in cam frame: #
+        #*##############################
+        # inv_K = np.linalg.inv(K)
+        
+        # w = 1   # Normalization factor
+        d = 20 #! How do i get this? it's the distance from the camera??
+
+        A = (maxCentroid[0] - u0) / fpixel_width
+        B = (maxCentroid[1] - v0) / fpixel_height
+        Z = d / sqrt(A**2 + B**2 + 1)
+
+        cam_coords = ut.Position(x=A*Z, y=B*Z, z=Z)
 
         # TODO apply intrinsic transformation to get centroid coordinates in camera frame
         # use maxCentroid as centroid coordinates and return ut.Position
-        maxCentroid.append(1) #? should this be 1 or the w value?
-        cameraFrame = np.linalg.inv(K) @ maxCentroid
+        # maxCentroid.append(w) #? should this be 1 or the w value?
 
-        return ut.Position(x=cameraFrame[0], y=cameraFrame[1], z=cameraFrame[2])
+        # cam_coords = np.matmul(inv_K, maxCentroid)
+        print(f"coordinates in camera frame: {cam_coords}")
+
+        return cam_coords
 
     def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
         object_d = np.sqrt(obj.x**2 + obj.y**2)
@@ -477,7 +551,8 @@ class HiwonderRobot:
         T_0C = T_03 @ T_3A @ T_AB @ T_BC
         # T_C0 = np.linalg.inv(T_0C)
 
-        BaseFrame = T_0C @ np.array(CamFrame).tolist().append(1)
+        # print(T_0C)
+        BaseFrame = T_0C @ [CamFrame.x, CamFrame.y, CamFrame.z, 1]
         return ut.Position(x=BaseFrame[0], y=BaseFrame[1], z=BaseFrame[2])
         
 
