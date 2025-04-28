@@ -45,7 +45,8 @@ class HiwonderRobot:
         self.servo_bus = ServoBusController()
 
         self.joint_values = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
-        self.home_position = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
+        # self.home_position = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
+        self.home_position = [0, -42, 42, -100, 0, -75*9/11]  # degrees
 
         # self.joint_values = [0, 0, 0, 0, 0, 0]  # degrees
         # self.home_position = [0, 0, 90, 0, 0, 0]  # degrees
@@ -150,6 +151,8 @@ class HiwonderRobot:
         print(f"[DEBUG] XYZ position: X: {round(position.x, 3)}, Y: {round(position.y, 3)}, Z: {round(position.z, 3)}")
         print(f"[DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)}")
         
+        _, frame = self.cap.read()
+        # cv.imwrite('./media/images/testraw.jpg', frame)
 
         # if cmd.utility_btn:
         #     self.analytical_ik()
@@ -158,10 +161,12 @@ class HiwonderRobot:
             
 
             # # TODO get vision frames
-            _, frame = self.cap.read()
+            # _, frame = self.cap.read()
+            # time.sleep(5)
+            # _, frame = self.cap.read()
             # im = convert(frame, rgb=False, colororder="BGR", copy=True)
+            # cv.imshow('Frame', frame)
             img = Image(frame, id=0, colororder="BGR")
-            # # cv.imshow('Frame', img)
 
             # # TODO find location of the object in camera frame
             obj_cam_frame = self.detect_cube(img)
@@ -170,8 +175,8 @@ class HiwonderRobot:
             # # TODO translate to robot base frame for x, y, z
             obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
             print(obj_base_frame)
-            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
 
+            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
 
             self.collect_cube_traj(obj_base_frame, position, pitch)
     
@@ -300,6 +305,8 @@ class HiwonderRobot:
         # convert image to numpy array
         img = img.image
 
+        # cv.imwrite('./media/images/test.jpg', img)
+
         # mask out floor from cube images
         gaussianBlur = blur = cv.GaussianBlur(img,(5,5),0)
         img_grayscale = cv.cvtColor(gaussianBlur, cv.COLOR_BGR2GRAY)
@@ -312,14 +319,15 @@ class HiwonderRobot:
         # get contours
         finishedMask = cv.cvtColor(openAfterClosing, cv.COLOR_BGR2GRAY)
         contours, hierarchy = cv.findContours(finishedMask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        cv.drawContours(img, contours, -1, (255,0,255), 3)
+        # cv.drawContours(img, contours, -1, (255,0,255), 3)
 
         # get bounding boxes and centroids
 
         # filters contour list so that bounding boxes and centroids of only large enough contours are found
         filteredContours = []
         for contour in contours:
-            if cv.contourArea(contour) > 200:
+            if cv.contourArea(contour) > 500:
+                cv.drawContours(img, contour, -1, (255,0,255), 3)
                 filteredContours.append(contour)
 
         boundingBoxes = []
@@ -349,6 +357,7 @@ class HiwonderRobot:
             cv.circle(img, (center_x, center_y), 5, (0, 255, 0), -1)  # Green circle for centroid
 
         # Display the image with bounding boxes and centroids
+        cv.imwrite('./media/images/test.jpg', img)
         print(f"bounding boxes: {boundingBoxes}")
         print(f"centroids: {centroids}")
 
@@ -359,11 +368,12 @@ class HiwonderRobot:
         # inv_K = np.linalg.inv(K)
         
         # w = 1   # Normalization factor
-        d = 20 #! How do i get this? it's the distance from the camera??
+        # d = 20 #! How do i get this? it's the distance from the camera??
 
         A = (maxCentroid[0] - u0) / fpixel_width
         B = (maxCentroid[1] - v0) / fpixel_height
-        Z = d / sqrt(A**2 + B**2 + 1)
+        # Z = d / sqrt(A**2 + B**2 + 1)
+        Z = 16 # cm (distance of camera above cube)
 
         cam_coords = ut.Position(x=A*Z, y=B*Z, z=Z)
 
@@ -378,30 +388,30 @@ class HiwonderRobot:
 
     def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
         object_d = np.sqrt(obj.x**2 + obj.y**2)
-        d_adjust = (object_d - 3) / object_d
+        d_adjust = (object_d - 4) / object_d
         int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=pos.z)
-        int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z*d_adjust)
+        int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z)
 
         # Compile waypoints
-        waypoints = [pos, int_position_1, int_position_2, obj]
+        waypoints = [pos, int_position_2, obj]
 
         # Do trajectory generation
         self.task_space_traj(waypoints, pitch)
-        time.sleep(7)
+        time.sleep(5)
         close_pos = self.joint_values
         close_pos[5] = -20
         self.set_joint_values(close_pos, duration=100, radians=False)
-        time.sleep(7)
-        self.analytical_ik(DROP_POINT)
-        time.sleep(7)
+        time.sleep(5)
+        self.analytical_ik(DROP_POINT, duration=2000)
+        time.sleep(5)
         open_pos = self.joint_values
         open_pos[5] = -70
-        self.set_joint_values(open_pos, duration=100, radians=False)
-        time.sleep(7)
+        self.set_joint_values(open_pos, duration=70, radians=False)
+        time.sleep(5)
         self.move_to_home_position()
-        time.sleep(7)
+        time.sleep(5)
 
-    def analytical_ik(self, EE: ut.EndEffector):
+    def analytical_ik(self, EE: ut.EndEffector, duration=700):
         # self.ik_iterator += 1
         # if self.ik_iterator == len(IK_POINTS):
         #     self.ik_iterator = 0
@@ -495,7 +505,7 @@ class HiwonderRobot:
         new_thetalist = self.enforce_joint_limits(new_thetalist, radians=True)
         print("new theta", new_thetalist)
         print()
-        self.set_joint_values(new_thetalist, duration=5000, radians=True)
+        self.set_joint_values(new_thetalist, duration=duration, radians=True)
         # print("done")
 
     def task_space_traj(self, waypoints, pitch, nsteps=10):
@@ -537,12 +547,12 @@ class HiwonderRobot:
                 rotz=PI
             )
             self.analytical_ik(ee)
-            time.sleep(0.2) # TODO will prob need to adjust
+            time.sleep(0.5) # TODO will prob need to adjust
         print("DONE")
             # input()
 
     def camera_frame_to_base(self, CamFrame: ut.Position):
-        L_A = 4 # cm
+        L_A = 6 # cm
         L_B = 4 # cm
         T_03 = self.T_cumulative[2]
         T_3A = ut.dh_to_matrix([np.deg2rad(self.joint_values[3]), 0, L_A, 0])
