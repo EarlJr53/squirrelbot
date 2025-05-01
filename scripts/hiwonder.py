@@ -160,7 +160,7 @@ class HiwonderRobot:
             # self.collect_cube()
             
 
-            # # TODO get vision frames
+            # TODO get vision frames
             # _, frame = self.cap.read()
             # time.sleep(5)
             # _, frame = self.cap.read()
@@ -174,10 +174,10 @@ class HiwonderRobot:
 
             # # TODO translate to robot base frame for x, y, z
             obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
+            obj_base_frame.z = 1.3
             print(obj_base_frame)
 
-            # obj_base_frame = ut.Position(x=17, y=-7, z=1.5) # replace with detected object x, y, z
-
+            # obj_base_frame = ut.Position(x=20, y=8, z=1.2) # replace with detected object x, y, z
             self.collect_cube_traj(obj_base_frame, position, pitch)
     
 
@@ -387,7 +387,15 @@ class HiwonderRobot:
         return cam_coords
 
     def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
+        obj.x *= 1.1
         object_d = np.sqrt(obj.x**2 + obj.y**2)
+        print("dist", object_d)
+        pitch += (object_d-15)*0.06
+        if pitch > 0.8:
+            pitch = 0.8
+        elif pitch < 0:
+            pitch = 0
+        print("pitch", pitch)
         d_adjust = (object_d - 4) / object_d
         int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=pos.z)
         int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z)
@@ -399,7 +407,7 @@ class HiwonderRobot:
         self.task_space_traj(waypoints, pitch)
         time.sleep(5)
         close_pos = self.joint_values
-        close_pos[5] = -20
+        close_pos[5] = -15
         self.set_joint_values(close_pos, duration=100, radians=False)
         time.sleep(5)
         self.analytical_ik(DROP_POINT, duration=2000)
