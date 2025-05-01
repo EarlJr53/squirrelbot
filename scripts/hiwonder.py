@@ -292,6 +292,34 @@ class HiwonderRobot:
         img = img.warp(Ud, Vd)
 
 
+        #####################
+        # gamma correction: #
+        #####################
+        """
+        img coming into this part is assumed to be an image object of the machinevisiontoolbox
+        could comment out first line below this if already a numpy array 
+
+        gamma correction code taken from https://pyimagesearch.com/2015/10/05/opencv-gamma-correction/
+            applies a Power Law Transform where O = I ^ (1 / G)
+            - O: output image, mapped to a 0-225 scale at the end
+            - I: input image, converted to a 0-1.0 scale at the beginning
+            - G: gamma value, where G < 1 makes image darker and G > 1 makes image brighter
+
+        not really necessary with a large opening kernel in morphology operations below, 
+        but should help make masking slightly more robust
+        """
+        # convert image to numpy array
+        img = img.image
+
+        gamma = 0.5 # will darken image
+
+        invGamma = 1.0 / gamma
+
+        # create lookup table to map
+        table = np.array([((i / 255.0) ** invGamma) * 255
+            for i in np.arange(0, 256)]).astype("uint8")
+        # apply gamma correction using the lookup table
+        img = cv.LUT(img, table)
 
 
         #*###################################
@@ -314,7 +342,8 @@ class HiwonderRobot:
         ret, bw_thresh = cv.threshold(img_grayscale,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
         bw_thresh = cv.bitwise_and(gaussianBlur, gaussianBlur, mask=bw_thresh)
         closing = cv.morphologyEx(bw_thresh, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT,(5,5)))
-        openAfterClosing = cv.morphologyEx(closing, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,(5,5)))
+        openAfterClosing = cv.morphologyEx(closing, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,((20,20))))
+            # dramatically increased the size of the kernel from a (5,5) rectangle to a (20,20) rectangle   
 
         # get contours
         finishedMask = cv.cvtColor(openAfterClosing, cv.COLOR_BGR2GRAY)
@@ -326,8 +355,9 @@ class HiwonderRobot:
         # filters contour list so that bounding boxes and centroids of only large enough contours are found
         filteredContours = []
         for contour in contours:
-            if cv.contourArea(contour) > 500:
-                cv.drawContours(img, contour, -1, (255,0,255), 3)
+            if cv.contourArea(contour) > 10000:
+                # 10000 area should count only blocks which are just about fully visible
+                # (and therefore have reliable enough centroids)
                 filteredContours.append(contour)
 
         boundingBoxes = []
