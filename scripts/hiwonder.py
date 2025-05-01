@@ -331,7 +331,7 @@ class HiwonderRobot:
         """
 
         # convert image to numpy array
-        img = img.image
+        # img = img.image
 
         # cv.imwrite('./media/images/test.jpg', img)
 
@@ -418,6 +418,7 @@ class HiwonderRobot:
 
     def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
         obj.x *= 1.1
+        obj.x += 1
         object_d = np.sqrt(obj.x**2 + obj.y**2)
         print("dist", object_d)
         pitch += (object_d-15)*0.06
@@ -435,19 +436,19 @@ class HiwonderRobot:
 
         # Do trajectory generation
         self.task_space_traj(waypoints, pitch)
-        time.sleep(5)
+        time.sleep(3)
         close_pos = self.joint_values
         close_pos[5] = -15
         self.set_joint_values(close_pos, duration=100, radians=False)
-        time.sleep(5)
+        time.sleep(3)
         self.analytical_ik(DROP_POINT, duration=2000)
-        time.sleep(5)
+        time.sleep(3)
         open_pos = self.joint_values
         open_pos[5] = -70
         self.set_joint_values(open_pos, duration=70, radians=False)
-        time.sleep(5)
+        time.sleep(3)
         self.move_to_home_position()
-        time.sleep(5)
+        time.sleep(3)
 
     def analytical_ik(self, EE: ut.EndEffector, duration=700):
         # self.ik_iterator += 1
