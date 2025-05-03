@@ -436,19 +436,19 @@ class HiwonderRobot:
 
         # Do trajectory generation
         self.task_space_traj(waypoints, pitch)
-        time.sleep(3)
+        time.sleep(2)
         close_pos = self.joint_values
         close_pos[5] = -15
         self.set_joint_values(close_pos, duration=100, radians=False)
-        time.sleep(3)
-        self.analytical_ik(DROP_POINT, duration=2000)
-        time.sleep(3)
+        time.sleep(2)
+        self.analytical_ik(DROP_POINT, duration=1500)
+        time.sleep(2)
         open_pos = self.joint_values
         open_pos[5] = -70
         self.set_joint_values(open_pos, duration=70, radians=False)
-        time.sleep(3)
+        time.sleep(2)
         self.move_to_home_position()
-        time.sleep(3)
+        time.sleep(2)
 
     def analytical_ik(self, EE: ut.EndEffector, duration=700):
         # self.ik_iterator += 1
