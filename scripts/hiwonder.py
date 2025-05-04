@@ -28,12 +28,10 @@ K_VEC = [0, 0, 1]  # Used in isolating the Z component of transformation matrice
 DET_J_THRESH = 3 * 10 & -5  # Threshold for when determinant is "close to 0"
 VEL_SCALE = 0.25  # Scale the EE velocity by this factor when close to a singularity
 
-DROP_POINT = ut.EndEffector(x=-13.492, y=2.384, z=17.884, rotx=2.967, roty=-0.676, rotz=3.142)
-
-IK_POINTS = [
-    ut.EndEffector(x=14.795, y=6.026, z=5.876, rotx=-2.755, roty=0.014, rotz=3.142),
-    ut.EndEffector(x=-1.155, y=-10.183, z=10.257, rotx=1.458, roty=0.214, rotz=3.142),
-]
+# Point where robot will try to drop cube into bucket
+DROP_POINT = ut.EndEffector(
+    x=-13.492, y=2.384, z=17.884, rotx=2.967, roty=-0.676, rotz=3.142
+)
 
 soln = 0
 
@@ -44,12 +42,8 @@ class HiwonderRobot:
         self.board = BoardController()
         self.servo_bus = ServoBusController()
 
-        self.joint_values = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
-        # self.home_position = [0, 20*9/11, 120*9/11, -100*9/11, 0*9/11, -75*9/11]  # degrees
-        self.home_position = [0, -42, 42, -100, 0, -75*9/11]  # degrees
-
-        # self.joint_values = [0, 0, 0, 0, 0, 0]  # degrees
-        # self.home_position = [0, 0, 90, 0, 0, 0]  # degrees
+        self.joint_values = [0, -42, 42, -100, 0, -75 * 9 / 11]  # degrees
+        self.home_position = [0, -42, 42, -100, 0, -75 * 9 / 11]  # degrees
 
         self.joint_limits = [
             [-120, 120],
@@ -83,8 +77,8 @@ class HiwonderRobot:
 
         self.ik_iterator = -1
 
+        # Create OpenCV video capture device
         self.cap = cv.VideoCapture(0)
-        # self.cap = VideoCamera(0)
 
         self.move_to_home_position()
 
@@ -111,7 +105,6 @@ class HiwonderRobot:
         position = [0] * 3
 
         theta = np.deg2rad(self.joint_values.copy())
-        # print("theta", theta)
 
         # Initialize DH parameters [theta, d, a, alpha]
         self.dh_params = [
@@ -144,42 +137,32 @@ class HiwonderRobot:
 
         ######################################################################
 
-        # print(
-        #     f"[DEBUG] XYZ position: X: {round(position[0], 3)}, Y: {round(position[1], 3)}, Z: {round(position[2], 3)} \n\
-        #     [DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)} \n"
-        # )
-        print(f"[DEBUG] XYZ position: X: {round(position.x, 3)}, Y: {round(position.y, 3)}, Z: {round(position.z, 3)}")
-        print(f"[DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)}")
-        
+        print(
+            f"[DEBUG] XYZ position: X: {round(position.x, 3)}, Y: {round(position.y, 3)}, Z: {round(position.z, 3)}"
+        )
+        print(
+            f"[DEBUG] Euler Angles: Roll: {round(roll, 3)}, Pitch: {round(pitch, 3)}, Yaw: {round(yaw, 3)}"
+        )
+
+        # Capture a frame on every loop
         _, frame = self.cap.read()
-        # cv.imwrite('./media/images/testraw.jpg', frame)
 
-        # if cmd.utility_btn:
-        #     self.analytical_ik()
         if cmd.collect_btn:
-            # self.collect_cube()
-            
 
-            # TODO get vision frames
-            # _, frame = self.cap.read()
-            # time.sleep(5)
-            # _, frame = self.cap.read()
-            # im = convert(frame, rgb=False, colororder="BGR", copy=True)
-            # cv.imshow('Frame', frame)
+            # Convert current OpenCV frame into machinevision-toolbox image
             img = Image(frame, id=0, colororder="BGR")
 
-            # # TODO find location of the object in camera frame
+            # Find location of the object in camera frame
             obj_cam_frame = self.detect_cube(img)
-            # print(obj_cam_frame)
+            print(f"Cam Frame: {obj_cam_frame}")
 
-            # # TODO translate to robot base frame for x, y, z
+            # Translate from camera frame coordinates to base frame
             obj_base_frame = self.camera_frame_to_base(obj_cam_frame)
-            obj_base_frame.z = 1.3
-            print(obj_base_frame)
+            obj_base_frame.z = 1.3  # ! Hard-coding Z position for now
+            print(f"Base Frame: {obj_base_frame}")
 
-            # obj_base_frame = ut.Position(x=20, y=8, z=1.2) # replace with detected object x, y, z
+            # Generate and follow trajectory to collect cube
             self.collect_cube_traj(obj_base_frame, position, pitch)
-    
 
         else:
             self.set_arm_velocity(cmd)
@@ -193,7 +176,7 @@ class HiwonderRobot:
         
         """
         ######################################################################
-        
+
         speed = np.zeros(4)
 
         vx, vy, w = cmd.base_vx, cmd.base_vy, cmd.base_w
@@ -213,58 +196,42 @@ class HiwonderRobot:
 
         ######################################################################
 
-        # print(speed)
         # Send speeds to motors
         self.board.set_motor_speed(speed)
         time.sleep(self.speed_control_delay)
 
-    # -------------------------------------------------------------
-    # Methods for interfacing with the 5-DOF robotic arm
-    # -------------------------------------------------------------
+    # * -------------------------------------------------------------
+    # * Methods for interfacing with the 5-DOF robotic arm
+    # * -------------------------------------------------------------
 
-    # def collect_cube(self):
-    #     # joints = self.joint_values
-    #     # joints[5] = -70
-    #     # self.set_joint_values(joints)
-    #     # time.sleep(self.joint_control_delay)
-
-
-    #     self.analytical_ik(IK_POINTS[0])
-    #     time.sleep(self.ik_control_delay)
-
-    #     joints = self.joint_values
-    #     joints[5] = -30
-    #     self.set_joint_values(joints)
-    #     time.sleep(self.joint_control_delay)
-
-    #     self.analytical_ik(DROP_POINT)
-    #     time.sleep(self.ik_control_delay)
-
-    #     joints = self.joint_values
-    #     joints[5] = -70
-    #     self.set_joint_values(joints)
-    #     time.sleep(self.joint_control_delay)
-
-    #     self.move_to_home_position()
-
-    def detect_cube(self, img):
-        #*######################
-        #* undistorting image: #
-        #*######################
+    def detect_cube(self, img: Image):
         """
-        img coming into this part must be an image object of the machinevisiontoolbox
+        Takes a frame from the camera and detects the colored cube in it.
+
+        Args:
+            img (Image): machinevision-toolbox Image frame to detect cube within
+
+        Returns:
+            ut.Position: Position containing X, Y, and Z coordinates of the cube in the camera reference frame
         """
+
+        # *######################
+        # * undistorting image: #
+        # *######################
+
+        # img coming into this part must be an image object of the machinevisiontoolbox
+
         K = np.array([[460.2, 0, 350.6], [0, 452.4, 235.7], [0, 0, 1]])
-            # matrix of camera's intrinsic parameters (K)
+        # matrix of camera's intrinsic parameters (K)
 
         # extracting intrinsic parameters
-        u0 = K[0,2]
-        v0 = K[1,2]
-        fpixel_width = K[0,0]
-        fpixel_height = K[1,1]
+        u0 = K[0, 2]
+        v0 = K[1, 2]
+        fpixel_width = K[0, 0]
+        fpixel_height = K[1, 1]
 
-        distortion = [-0.4033, 0.2033, 0.00473, 0.001013, -0.05674]  
-            # lens distortion parameters
+        distortion = [-0.4033, 0.2033, 0.00473, 0.001013, -0.05674]
+        # lens distortion parameters
         # extracting distortion parameters
         k1, k2, p1, p2, k3 = distortion
 
@@ -277,11 +244,19 @@ class HiwonderRobot:
         r = np.sqrt(x**2 + y**2)
 
         # Compute the image coordinate errors due to both radial and tangential distortion
-        delta_x = x * (k1*r**2 + k2*r**4 + k3*r**6) + 2*p1*x*y + p2*(r**2 + 2*x**2)
-        delta_y = y * (k1*r**2 + k2*r**4 + k3*r**6) + p1*(r**2 + 2*y**2) + p2*x*y
+        delta_x = (
+            x * (k1 * r**2 + k2 * r**4 + k3 * r**6)
+            + 2 * p1 * x * y
+            + p2 * (r**2 + 2 * x**2)
+        )
+        delta_y = (
+            y * (k1 * r**2 + k2 * r**4 + k3 * r**6)
+            + p1 * (r**2 + 2 * y**2)
+            + p2 * x * y
+        )
 
         # Distorted retinal coordinates
-        xd = x + delta_x 
+        xd = x + delta_x
         yd = y + delta_y
 
         # Convert back from image coordinates to pixel coordinates in the distorted image
@@ -291,10 +266,9 @@ class HiwonderRobot:
         # Apply the warp to a distorted image and observe the undistorted image
         img = img.warp(Ud, Vd)
 
-
-        #####################
-        # gamma correction: #
-        #####################
+        # *####################
+        # * gamma correction: #
+        # *####################
         """
         img coming into this part is assumed to be an image object of the machinevisiontoolbox
         could comment out first line below this if already a numpy array 
@@ -311,20 +285,20 @@ class HiwonderRobot:
         # convert image to numpy array
         img = img.image
 
-        gamma = 0.5 # will darken image
+        gamma = 0.5  # will darken image
 
         invGamma = 1.0 / gamma
 
         # create lookup table to map
-        table = np.array([((i / 255.0) ** invGamma) * 255
-            for i in np.arange(0, 256)]).astype("uint8")
+        table = np.array(
+            [((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]
+        ).astype("uint8")
         # apply gamma correction using the lookup table
         img = cv.LUT(img, table)
 
-
-        #*###################################
-        #* masking and contour shenanigans: #
-        #*###################################
+        # *###################################
+        # * masking and contour shenanigans: #
+        # *###################################
         """
         img coming into this part is assumed to be an image object of the machinevisiontoolbox
         could comment out first line below this if already a numpy array 
@@ -333,22 +307,28 @@ class HiwonderRobot:
         # convert image to numpy array
         # img = img.image
 
-        # cv.imwrite('./media/images/test.jpg', img)
-
         # mask out floor from cube images
-        gaussianBlur = blur = cv.GaussianBlur(img,(5,5),0)
+        gaussianBlur = blur = cv.GaussianBlur(img, (5, 5), 0)
         img_grayscale = cv.cvtColor(gaussianBlur, cv.COLOR_BGR2GRAY)
+
         # Otsu's thresholding
-        ret, bw_thresh = cv.threshold(img_grayscale,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
+        ret, bw_thresh = cv.threshold(
+            img_grayscale, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU
+        )
         bw_thresh = cv.bitwise_and(gaussianBlur, gaussianBlur, mask=bw_thresh)
-        closing = cv.morphologyEx(bw_thresh, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT,(5,5)))
-        openAfterClosing = cv.morphologyEx(closing, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,((20,20))))
-            # dramatically increased the size of the kernel from a (5,5) rectangle to a (20,20) rectangle   
+        closing = cv.morphologyEx(
+            bw_thresh, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
+        )
+        openAfterClosing = cv.morphologyEx(
+            closing, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ((20, 20)))
+        )
+        # dramatically increased the size of the kernel from a (5,5) rectangle to a (20,20) rectangle
 
         # get contours
         finishedMask = cv.cvtColor(openAfterClosing, cv.COLOR_BGR2GRAY)
-        contours, hierarchy = cv.findContours(finishedMask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        # cv.drawContours(img, contours, -1, (255,0,255), 3)
+        contours, hierarchy = cv.findContours(
+            finishedMask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
 
         # get bounding boxes and centroids
 
@@ -384,52 +364,54 @@ class HiwonderRobot:
 
             # Draw bounding box and centroid
             cv.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green rectangle
-            cv.circle(img, (center_x, center_y), 5, (0, 255, 0), -1)  # Green circle for centroid
+            cv.circle(
+                img, (center_x, center_y), 5, (0, 255, 0), -1
+            )  # Green circle for centroid
 
         # Display the image with bounding boxes and centroids
-        cv.imwrite('./media/images/test.jpg', img)
+        cv.imwrite("./media/images/test.jpg", img)
         print(f"bounding boxes: {boundingBoxes}")
         print(f"centroids: {centroids}")
 
-
-        #*##############################
-        #* pos of blocks in cam frame: #
-        #*##############################
-        # inv_K = np.linalg.inv(K)
-        
-        # w = 1   # Normalization factor
-        # d = 20 #! How do i get this? it's the distance from the camera??
+        # *##############################
+        # * pos of blocks in cam frame: #
+        # *##############################
 
         A = (maxCentroid[0] - u0) / fpixel_width
         B = (maxCentroid[1] - v0) / fpixel_height
-        # Z = d / sqrt(A**2 + B**2 + 1)
-        Z = 16 # cm (distance of camera above cube)
 
-        cam_coords = ut.Position(x=A*Z, y=B*Z, z=Z)
+        # ! This is hard-coded!
+        Z = 16  # cm (distance of camera above cube)
 
-        # TODO apply intrinsic transformation to get centroid coordinates in camera frame
-        # use maxCentroid as centroid coordinates and return ut.Position
-        # maxCentroid.append(w) #? should this be 1 or the w value?
-
-        # cam_coords = np.matmul(inv_K, maxCentroid)
-        print(f"coordinates in camera frame: {cam_coords}")
+        cam_coords = ut.Position(x=A * Z, y=B * Z, z=Z)
 
         return cam_coords
 
-    def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch):
+    def collect_cube_traj(self, obj: ut.Position, pos: ut.Position, pitch: float):
+        """
+        Given an object position, end effector position, and end effector pitch,
+        generate a trajectory to the object, collect it, and deposit it in the
+        bin on the back of the robot.
+
+        Args:
+            obj (ut.Position): Position of the object in the base frame
+            pos (ut.Position): Position of the end effector in the base frame
+            pitch (float): Current pitch of the end effector
+        """
+
         obj.x *= 1.1
         obj.x += 1
         object_d = np.sqrt(obj.x**2 + obj.y**2)
         print("dist", object_d)
-        pitch += (object_d-15)*0.06
+        pitch += (object_d - 15) * 0.06
         if pitch > 0.8:
             pitch = 0.8
         elif pitch < 0:
             pitch = 0
         print("pitch", pitch)
         d_adjust = (object_d - 4) / object_d
-        int_position_1 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=pos.z)
-        int_position_2 = ut.Position(x=obj.x*d_adjust, y=obj.y*d_adjust, z=obj.z)
+        int_position_1 = ut.Position(x=obj.x * d_adjust, y=obj.y * d_adjust, z=pos.z)
+        int_position_2 = ut.Position(x=obj.x * d_adjust, y=obj.y * d_adjust, z=obj.z)
 
         # Compile waypoints
         waypoints = [pos, int_position_2, obj]
@@ -451,11 +433,15 @@ class HiwonderRobot:
         time.sleep(2)
 
     def analytical_ik(self, EE: ut.EndEffector, duration=700):
-        # self.ik_iterator += 1
-        # if self.ik_iterator == len(IK_POINTS):
-        #     self.ik_iterator = 0
-        # EE = IK_POINTS[self.ik_iterator]
-        
+        """
+        Use analytical inverse kinematics to calculate the joint angles for a
+        given end effector position and move to that position.
+
+        Args:
+            EE (ut.EndEffector): Desired position of end effector
+            duration (int, optional): Desired duration of movement. Defaults to 700.
+        """
+
         x, y, z = EE.x, EE.y, EE.z
         print("xyzrpy", x, y, z, EE.rotx, EE.roty, EE.rotz)
         R_05 = ut.euler_to_rotm((EE.rotx, EE.roty, EE.rotz))
@@ -481,7 +467,6 @@ class HiwonderRobot:
         j3 = acos((r**2 - self.l2**2 - self.l3**2) / (2 * self.l2 * self.l3))
 
         # Set of 4 potential solutions
-        #! @EarlJr53 interested in adding more solutions perhaps?
         solns = np.array(
             [
                 # Standard configuration
@@ -545,65 +530,75 @@ class HiwonderRobot:
         print("new theta", new_thetalist)
         print()
         self.set_joint_values(new_thetalist, duration=duration, radians=True)
-        # print("done")
 
-    def task_space_traj(self, waypoints, pitch, nsteps=10):
+    def task_space_traj(self, waypoints: list[ut.Position], pitch: float, nsteps=10):
+        """
+        Given a list of desired waypoints, generate a trajectory to follow them in task space.
+
+        Args:
+            waypoints (list[ut.Position]): List of desired trajectory waypoint positions.
+            pitch (float): Current pitch of end effector.
+            nsteps (int, optional): Desired number of trajectory points. Defaults to 10.
+        """
         traj_dofs = None
-        for i in range(len(waypoints)-1):
+        for i in range(len(waypoints) - 1):
             start_vel = None
             final_vel = None
             start_acc = None
             final_acc = None
-            # start_vel = [0.1, 0, 0]
-            # final_vel = [0.1, 0, 0]
-            # start_acc = [0, 0, 0]
-            # final_acc = [0, 0, 0]
-            # if i == 0:
-            #     start_vel = None
-            #     start_acc = None
-            # if i == len(waypoints)-2:
-            #     final_vel = None
-            #     final_acc = None
 
-            traj = MultiAxisTrajectoryGenerator(method="quintic", mode="task", interval=[0, 1], ndof=len(np.array(waypoints[0])), 
-                                                start_pos=np.array(waypoints[i]), final_pos=np.array(waypoints[i+1]), 
-                                                start_vel=start_vel, final_vel=final_vel,
-                                                start_acc=start_acc, final_acc=final_acc)
+            traj = MultiAxisTrajectoryGenerator(
+                method="quintic",
+                mode="task",
+                interval=[0, 1],
+                ndof=len(np.array(waypoints[0])),
+                start_pos=np.array(waypoints[i]),
+                final_pos=np.array(waypoints[i + 1]),
+                start_vel=start_vel,
+                final_vel=final_vel,
+                start_acc=start_acc,
+                final_acc=final_acc,
+            )
             points = traj.generate(nsteps=nsteps)
             if traj_dofs is not None:
                 traj_dofs = np.concatenate([traj_dofs, points], axis=2)
             else:
                 traj_dofs = points
 
-        for i in range(nsteps*(len(waypoints)-1)):
+        for i in range(nsteps * (len(waypoints) - 1)):
             pos = [dof[0][i] for dof in traj_dofs]
             ee = ut.EndEffector(
-                x=pos[0], 
-                y=pos[1], 
-                z=pos[2], 
-                rotx=ut.wraptopi(atan2(pos[1], pos[0]) + PI), 
-                roty=pitch, 
-                rotz=PI
+                x=pos[0],
+                y=pos[1],
+                z=pos[2],
+                rotx=ut.wraptopi(atan2(pos[1], pos[0]) + PI),
+                roty=pitch,
+                rotz=PI,
             )
             self.analytical_ik(ee)
-            time.sleep(0.5) # TODO will prob need to adjust
+            time.sleep(0.5)  # TODO will prob need to adjust
         print("DONE")
-            # input()
 
     def camera_frame_to_base(self, CamFrame: ut.Position):
-        L_A = 6 # cm
-        L_B = 4 # cm
+        """
+        Convert object position from camera to base frame using extrinsic parameters.
+
+        Args:
+            CamFrame (ut.Position): Position of object in camera frame.
+
+        Returns:
+            ut.Position: Position of object in base frame.
+        """
+        L_A = 6  # cm
+        L_B = 4  # cm
         T_03 = self.T_cumulative[2]
         T_3A = ut.dh_to_matrix([np.deg2rad(self.joint_values[3]), 0, L_A, 0])
         T_AB = ut.dh_to_matrix([(-np.pi / 2), 0, L_B, (-np.pi / 2)])
         T_BC = ut.dh_to_matrix([(-np.pi / 2), 0, 0, 0])
         T_0C = T_03 @ T_3A @ T_AB @ T_BC
-        # T_C0 = np.linalg.inv(T_0C)
 
-        # print(T_0C)
         BaseFrame = T_0C @ [CamFrame.x, CamFrame.y, CamFrame.z, 1]
         return ut.Position(x=BaseFrame[0], y=BaseFrame[1], z=BaseFrame[2])
-        
 
     def set_arm_velocity(self, cmd: ut.GamepadCmds):
         """Calculates and sets new joint angles from linear velocities.
@@ -691,7 +686,7 @@ class HiwonderRobot:
             theta = np.rad2deg(theta)
 
         # !theta = self.enforce_joint_limits(theta, joint_id=joint_id)
-        self.joint_values[joint_id-1] = theta
+        self.joint_values[joint_id - 1] = theta
 
         pulse = self.angle_to_pulse(theta)
         self.servo_bus.move_servo(joint_id, pulse, duration)
@@ -719,7 +714,7 @@ class HiwonderRobot:
         )  # remap the joint values from software to hardware
 
         for joint_id, theta in enumerate(thetalist, start=1):
-            pulse = self.angle_to_pulse(11*theta/9)
+            pulse = self.angle_to_pulse(11 * theta / 9)
             self.servo_bus.move_servo(joint_id, pulse, duration)
 
     def enforce_joint_limits(self, thetalist: list, radians=False) -> list:
@@ -733,8 +728,9 @@ class HiwonderRobot:
         """
         if radians:
             return [
-            np.clip(theta, *limit) for theta, limit in zip(thetalist, np.deg2rad(self.joint_limits))
-        ]
+                np.clip(theta, *limit)
+                for theta, limit in zip(thetalist, np.deg2rad(self.joint_limits))
+            ]
         return [
             np.clip(theta, *limit) for theta, limit in zip(thetalist, self.joint_limits)
         ]
