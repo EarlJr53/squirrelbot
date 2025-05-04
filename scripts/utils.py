@@ -74,6 +74,12 @@ class Position:
     def __array__(self) -> np.ndarray:
         return np.array([self.x, self.y, self.z])
 
+    def __repr__(self) -> str:
+        return f"Position(x={self.x}, y={self.y}, z={self.z})"
+    
+    def __str__(self) -> str:
+        return f"(x={self.x}, y={self.y}, z={self.z})"
+
 
 def rotm_to_euler(R) -> tuple:
     """Converts a rotation matrix to Euler angles (roll, pitch, yaw).
