@@ -65,6 +65,7 @@ class EndEffector:
     roty: float = 0.0
     rotz: float = 0.0
 
+
 @dataclass
 class Position:
     x: float = 0.0
@@ -76,7 +77,7 @@ class Position:
 
     def __repr__(self) -> str:
         return f"Position(x={self.x}, y={self.y}, z={self.z})"
-    
+
     def __str__(self) -> str:
         return f"(x={self.x}, y={self.y}, z={self.z})"
 

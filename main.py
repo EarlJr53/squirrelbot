@@ -11,7 +11,7 @@ import threading
 import traceback
 
 # Extend system path to include script directory
-sys.path.append(os.path.join(os.getcwd(), 'scripts'))
+sys.path.append(os.path.join(os.getcwd(), "scripts"))
 
 from hiwonder import HiwonderRobot
 from gamepad_control import GamepadControl
@@ -20,13 +20,13 @@ import cv2 as cv
 
 
 # Initialize components
-cmdlist = []    # Stores recent gamepad commands
+cmdlist = []  # Stores recent gamepad commands
 gpc = GamepadControl()
 robot = HiwonderRobot()
 
 
 def monitor_gamepad():
-    """ Continuously reads gamepad inputs and stores the latest command. """
+    """Continuously reads gamepad inputs and stores the latest command."""
     try:
         while True:
             if len(cmdlist) > 2:
@@ -56,14 +56,14 @@ def shutdown_robot():
 
 
 def main():
-    """ Main loop that reads gamepad commands and updates the robot accordingly. """
+    """Main loop that reads gamepad commands and updates the robot accordingly."""
     try:
         # Start the gamepad monitoring thread
         gamepad_thread = threading.Thread(target=monitor_gamepad, daemon=True)
         gamepad_thread.start()
-        
+
         control_interval = 0.25  # Seconds per control cycle
-        
+
         while True:
             cycle_start = time.time()
 
@@ -71,14 +71,14 @@ def main():
                 latest_cmd = cmdlist[-1]
                 # accessing the utility button, LB, on the gamepad (uncomment code below to use)
                 # print(f'Utility Button is [ {latest_cmd.utility_btn} ]')
-                
+
                 robot.set_robot_commands(latest_cmd)
 
             elapsed = time.time() - cycle_start
             remaining_time = control_interval - elapsed
             if remaining_time > 0:
                 time.sleep(remaining_time)
-            
+
     except KeyboardInterrupt:
         print("\n[INFO] Keyboard Interrupt detected. Initiating shutdown...")
     except Exception as e:
@@ -88,9 +88,5 @@ def main():
         shutdown_robot()
 
 
-
-
 if __name__ == "__main__":
     main()
-
-

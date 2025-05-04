@@ -146,7 +146,7 @@ class GamepadControl:
             "ABS_Y": ("abs_y", event.state),
             "ABS_RX": ("abs_rx", event.state),
             "ABS_RY": ("abs_ry", event.state),
-            'BTN_TR': ('COLLECT_BTN', bool(event.state)),
+            "BTN_TR": ("COLLECT_BTN", bool(event.state)),
             "BTN_TL": ("MANUAL_ARM_FLAG", bool(event.state)),
             # "BTN_TR": ("ARM_FLAG", bool(event.state)),
             "BTN_WEST": ("ARM_J1_FLAG", bool(event.state)),
